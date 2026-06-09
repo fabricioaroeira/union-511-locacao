@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Union 511 — Gestão de Locação</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#2563eb">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/forms.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>Painel de Controle — Union 511 Noroeste</h1>
+    <div class="sub">CRNW 511, Setor Noroeste, Brasília/DF · 52 lojas comerciais · 80 vagas de garagem comercial</div>
+  </div>
+  <div class="user-menu">
+    <span class="meta">Atualizado em <strong id="today"></strong></span>
+    <span class="nome" id="user-nome">—</span>
+    <button id="btn-logout">Sair</button>
+  </div>
+</header>
+
+<!-- KPIs -->
+<section class="kpis" id="kpis"></section>
+
+<!-- Tabs -->
+<div class="tabs" id="tabs">
+  <button class="tab active" data-panel="overview">Visão Geral</button>
+  <button class="tab" data-panel="ocupadas">Ocupadas <span data-counter="ocupadas"></span></button>
+  <button class="tab" data-panel="disponiveis">Disponíveis <span data-counter="disponiveis"></span></button>
+  <button class="tab" data-panel="inquilinos">Inquilinos <span data-counter="inquilinos"></span></button>
+  <button class="tab" data-panel="propostas">Propostas <span data-counter="propostas"></span></button>
+  <button class="tab" data-panel="vencimentos">Vencimentos &amp; Renovações</button>
+  <button class="tab" data-panel="alertas">Alertas &amp; Pendências</button>
+  <button class="tab" data-panel="chat-ia">💬 Chat IA</button>
+  <button class="tab" data-panel="principios">Princípios</button>
+</div>
+
+<!-- Visão Geral -->
+<div class="panel active" id="overview">
+  <div class="card">
+    <div class="card-head">
+      <h2>Mapa do empreendimento — 52 lojas</h2>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="card">
+    <h2>Ocupação do portfólio</h2>
+    <div id="ocupacao-resumo"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Composição do mix de inquilinos</h2>
+    </div>
+    <table>
+      <thead><tr><th>Segmento</th><th>Inquilino (razão social)</th><th>Nome fantasia</th><th>Lojas</th></tr></thead>
+      <tbody id="tbl-mix"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Ocupadas -->
+<div class="panel" id="ocupadas">
+  <div class="card">
+    <div class="card-head">
+      <h2 id="ocupadas-titulo">Lojas ocupadas</h2>
+      <button class="btn" id="btn-novo-contrato">+ Novo contrato</button>
+    </div>
+    <div class="sub" style="margin-bottom:12px;color:var(--ink-soft)">
+      Dados extraídos diretamente dos contratos assinados (Quadros Resumo). Clique no PDF para abrir o contrato. Botões de ação por linha.
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Loja</th><th>Inquilino</th><th>Área (m²)</th><th>Aluguel/mês</th><th>Venc.</th><th>Prazo</th>
+          <th>Reajuste</th><th>Garantia</th><th>Início → Término</th><th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="tbl-ocup"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Disponíveis -->
+<div class="panel" id="disponiveis">
+  <div class="card">
+    <div class="card-head">
+      <h2 id="disponiveis-titulo">Lojas disponíveis para locação</h2>
+      <button class="btn outline" id="btn-editar-areas">📐 Editar áreas das lojas</button>
+    </div>
+    <div class="sub" style="margin-bottom:12px;color:var(--ink-soft)" id="disponiveis-sub"></div>
+    <table>
+      <thead><tr><th>Loja</th><th>Status</th><th>m²</th><th>Pipeline</th></tr></thead>
+      <tbody id="tbl-disp"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Inquilinos -->
+<div class="panel" id="inquilinos">
+  <div class="card">
+    <div class="card-head">
+      <h2 id="inquilinos-titulo">Inquilinos ativos</h2>
+      <button class="btn outline" id="btn-novo-inquilino">+ Novo inquilino</button>
+    </div>
+    <div id="tenant-list"></div>
+  </div>
+</div>
+
+<!-- Propostas -->
+<div class="panel" id="propostas">
+  <div class="card">
+    <div class="card-head">
+      <h2>Propostas ativas — pendentes de decisão ou documentação</h2>
+      <button class="btn" id="btn-nova-proposta">+ Nova proposta</button>
+    </div>
+    <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
+      Cada card representa uma proposta em pipeline. Referências de R$/m²: portfólio R$ 176 (médio ponderado) · conservador R$ 152 · âncora Pague Menos R$ 193.
+    </div>
+    <div id="propostas-resumo" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px"></div>
+    <div id="propostas-list"></div>
+  </div>
+</div>
+
+<!-- Vencimentos -->
+<div class="panel" id="vencimentos">
+  <div class="card">
+    <h2>Linha do tempo de vencimentos contratuais</h2>
+    <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
+      Cada barra representa a duração total do contrato. A linha vermelha marca a data de hoje. Contratos &gt;= 120 meses em âmbar; parciais em violeta.
+    </div>
+    <div class="timeline-labels">
+      <div>Inquilino</div><div>Vigência</div><div>Vence em</div>
+    </div>
+    <div id="timeline-rows"></div>
+    <div class="timeline-scale" id="timeline-scale"></div>
+  </div>
+
+  <div class="card">
+    <h2>Tabela detalhada de prazos</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Inquilino</th><th>Lojas</th><th>Assinatura</th><th>Início vigência</th>
+          <th>Prazo</th><th>Término</th><th>Meses restantes</th>
+        </tr>
+      </thead>
+      <tbody id="tbl-venc"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Alertas -->
+<div class="panel" id="alertas">
+  <div class="card">
+    <h2>Alertas &amp; pendências</h2>
+    <div id="alertas-list"></div>
+  </div>
+</div>
+
+<!-- Chat IA -->
+<div class="panel" id="chat-ia">
+  <!-- Conteúdo gerado dinamicamente por js/chat.js -->
+</div>
+
+<!-- Princípios -->
+<div class="panel" id="principios">
+  <div class="card">
+    <h2>Regras estruturais &amp; princípios</h2>
+    <div class="principles">
+      <div class="principle">
+        <div class="principle-title">Carência dentro do ano 1</div>
+        <div class="principle-body">3 meses de carência sempre dentro do ano contratual 1 → ano 1 = 9 meses pagos (meses 4–12).</div>
+      </div>
+      <div class="principle">
+        <div class="principle-title">IGP-M desde o ano 1 (padrão Union 511)</div>
+        <div class="principle-body">Correção IGP-M aplicada em todos os valores. Exceções: Pague Menos e Drogaria Brasil usam IPCA.</div>
+      </div>
+      <div class="principle">
+        <div class="principle-title">Benchmark interno</div>
+        <div class="principle-body">Toda comparação de R$/m² deve ser feita contra contratos efetivos do Union 511. Estimativas genéricas não substituem dados internos.</div>
+      </div>
+      <div class="principle">
+        <div class="principle-title">Garantia &amp; contratante PJ</div>
+        <div class="principle-body">Fiador é o elo mais frágil. Sempre que possível, contrato sob PJ. Tipos no portfólio: Fiança PJ, Fiança Pessoal, Seguro Fiança, Título de Capitalização, Sem garantia.</div>
+      </div>
+      <div class="principle">
+        <div class="principle-title">Documentos externos</div>
+        <div class="principle-body">Para distribuição externa, sem nome interno — usar "Locadora" ou "Union 511 Noroeste". Locadora real: JAX 28 Empreendimentos Imobiliários Ltda.</div>
+      </div>
+      <div class="principle">
+        <div class="principle-title">Entregas em múltiplos formatos</div>
+        <div class="principle-body">Fonte editável (Word/Excel) + PDF para entrega. Conversão via LibreOffice. Contratos assinados via D4Sign.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- Container de toasts -->
+<div id="toast-container"></div>
+
+<!-- App bootstrap -->
+<script type="module">
+import { requireAuth, getCurrentUser, signOut } from './js/auth.js';
+import { renderTudo, mostrarToast } from './js/render.js';
+import { abrirFormContrato } from './js/forms-contrato.js';
+import { abrirFormProposta } from './js/forms-proposta.js';
+import { abrirFormInquilino } from './js/forms-inquilino.js';
+import { abrirFormAreasLojas } from './js/forms-lojas.js';
+import { initChat } from './js/chat.js';
+
+// 1. Verifica autenticação
+await requireAuth();
+
+// 2. Carrega usuário
+const user = await getCurrentUser();
+document.getElementById('user-nome').textContent = user?.nome || user?.email || '—';
+document.getElementById('today').textContent = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+
+// 3. Logout
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  await signOut();
+  window.location.href = '/login.html';
+});
+
+// 4. Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.panel).classList.add('active');
+    if (tab.dataset.panel === 'chat-ia') initChat();
+  });
+});
+
+// 5. Botoes CRUD
+document.getElementById('btn-novo-contrato').addEventListener('click', () => abrirFormContrato());
+document.getElementById('btn-novo-inquilino').addEventListener('click', () => abrirFormInquilino());
+document.getElementById('btn-editar-areas').addEventListener('click', () => abrirFormAreasLojas());
+
+// 6. Render inicial
+await renderTudo();
+
+// 7. Service Worker (PWA)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(err => console.warn('SW:', err));
+}
+</script>
+</body>
+</html>

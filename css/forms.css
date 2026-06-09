@@ -1,0 +1,108 @@
+/* =====================================================================
+   UNION 511 APP — Estilos dos modais de formulário
+   ===================================================================== */
+
+.modal-backdrop{
+  position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:1000;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  animation:fadeIn .15s
+}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+.modal{
+  background:var(--card);border-radius:12px;max-width:760px;width:100%;
+  max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.2);
+  animation:modalIn .2s
+}
+@keyframes modalIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+.modal-head{
+  padding:18px 24px;border-bottom:1px solid var(--line);
+  display:flex;justify-content:space-between;align-items:center;
+  position:sticky;top:0;background:var(--card);z-index:2;border-radius:12px 12px 0 0
+}
+.modal-title{font-size:16px;font-weight:700;color:var(--ink)}
+.modal-close{
+  background:none;border:none;font-size:22px;color:var(--ink-soft);
+  cursor:pointer;padding:0;width:30px;height:30px;
+  display:flex;align-items:center;justify-content:center;border-radius:6px
+}
+.modal-close:hover{background:var(--bg);color:var(--ink)}
+
+.modal-body{padding:20px 24px}
+
+.modal-foot{
+  padding:14px 24px;border-top:1px solid var(--line);
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  position:sticky;bottom:0;background:var(--card);border-radius:0 0 12px 12px
+}
+.modal-foot .right{display:flex;gap:8px}
+
+/* Form grid */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-grid.cols-3{grid-template-columns:repeat(3,1fr)}
+.form-grid.cols-4{grid-template-columns:repeat(4,1fr)}
+.form-grid > .full{grid-column:1/-1}
+
+.form-section{margin-bottom:18px}
+.form-section-title{
+  font-size:11px;text-transform:uppercase;letter-spacing:0.04em;
+  color:var(--ink-soft);font-weight:600;margin-bottom:10px;
+  padding-bottom:6px;border-bottom:1px solid var(--line)
+}
+
+.form-field{display:flex;flex-direction:column;gap:5px}
+.form-field label{
+  font-size:11px;text-transform:uppercase;letter-spacing:0.04em;
+  font-weight:600;color:var(--ink-soft)
+}
+.form-field input,
+.form-field select,
+.form-field textarea{
+  width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:7px;
+  font-family:inherit;font-size:13px;color:var(--ink);outline:none;transition:border .12s;
+  background:var(--card)
+}
+.form-field input:focus,
+.form-field select:focus,
+.form-field textarea:focus{border-color:var(--accent)}
+.form-field textarea{resize:vertical;min-height:60px}
+.form-field .hint{font-size:11px;color:var(--ink-soft);margin-top:1px}
+.form-field .erro{font-size:11px;color:var(--red)}
+
+/* Chips para selecionar lojas */
+.lojas-picker{
+  display:grid;grid-template-columns:repeat(13,1fr);gap:4px;
+  padding:10px;background:var(--bg);border-radius:8px
+}
+.lojas-picker .chip{
+  aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+  border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;
+  background:#cbd5e1;color:white;transition:all .12s
+}
+.lojas-picker .chip:hover{transform:scale(1.06)}
+.lojas-picker .chip.selected{background:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
+.lojas-picker .chip.ocupada{background:var(--green);opacity:0.5;cursor:not-allowed}
+.lojas-picker .chip.interna{background:#1a2332;color:#94a3b8;cursor:not-allowed}
+.lojas-picker .chip.proposta{background:var(--amber);opacity:0.7;cursor:not-allowed}
+
+/* Upload */
+.upload-box{
+  border:2px dashed var(--line);border-radius:8px;padding:24px;text-align:center;
+  cursor:pointer;transition:all .15s;color:var(--ink-soft);font-size:13px
+}
+.upload-box:hover,.upload-box.drag{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+
+.arquivo-item{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;font-size:12px
+}
+.arquivo-item a{color:var(--accent);text-decoration:none}
+.arquivo-item a:hover{text-decoration:underline}
+
+@media (max-width:700px){
+  .form-grid,.form-grid.cols-3,.form-grid.cols-4{grid-template-columns:1fr}
+  .lojas-picker{grid-template-columns:repeat(7,1fr)}
+  .modal{max-height:100vh;border-radius:0}
+  .modal-backdrop{padding:0}
+}

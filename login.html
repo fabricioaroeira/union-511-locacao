@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — Union 511</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#2563eb">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1a2332; --ink-soft:#5b6b80;
+    --line:#e3e8ef; --accent:#2563eb; --accent-hover:#1d4ed8;
+    --red:#dc2626; --red-soft:#fee2e2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .login-box{
+    background:var(--card);border-radius:16px;padding:36px;width:100%;max-width:380px;
+    border:1px solid var(--line);box-shadow:0 4px 24px rgba(0,0,0,0.04);
+  }
+  .logo{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:8px}
+  .logo img{width:48px;height:48px}
+  h1{font-size:22px;font-weight:700;text-align:center;letter-spacing:-0.02em}
+  .sub{text-align:center;color:var(--ink-soft);font-size:13px;margin-top:6px;margin-bottom:24px}
+  label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;margin-top:14px}
+  input{
+    width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;
+    font-family:inherit;font-size:14px;color:var(--ink);outline:none;transition:border .15s;
+  }
+  input:focus{border-color:var(--accent)}
+  button{
+    width:100%;padding:12px;background:var(--accent);color:white;border:none;border-radius:8px;
+    font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-top:20px;transition:background .15s;
+  }
+  button:hover{background:var(--accent-hover)}
+  button:disabled{background:var(--ink-soft);cursor:not-allowed}
+  .erro{background:var(--red-soft);color:var(--red);padding:10px 12px;border-radius:8px;font-size:13px;margin-top:14px;display:none}
+  .erro.show{display:block}
+  .footer{text-align:center;font-size:11px;color:var(--ink-soft);margin-top:18px}
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="logo">
+    <img src="/icons/icon.svg" alt="Union 511">
+  </div>
+  <h1>Union 511</h1>
+  <p class="sub">Gestão de locação · CRNW 511 Noroeste</p>
+
+  <form id="login-form">
+    <label for="email">Email</label>
+    <input type="email" id="email" required autocomplete="email" placeholder="seu@email.com">
+
+    <label for="senha">Senha</label>
+    <input type="password" id="senha" required autocomplete="current-password" placeholder="••••••••">
+
+    <div class="erro" id="erro"></div>
+
+    <button type="submit" id="btn-entrar">Entrar</button>
+  </form>
+
+  <div class="footer">Acesso restrito · Union 511 Noroeste</div>
+</div>
+
+<script type="module">
+import { signIn, isLogged, MOCK_MODE } from './js/auth.js';
+
+// Se já está logado, manda pro app
+if (await isLogged()) {
+  window.location.href = '/';
+}
+
+const form = document.getElementById('login-form');
+const erro = document.getElementById('erro');
+const btn = document.getElementById('btn-entrar');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  erro.classList.remove('show');
+  btn.disabled = true;
+  btn.textContent = 'Entrando...';
+
+  const email = document.getElementById('email').value;
+  const senha = document.getElementById('senha').value;
+
+  try {
+    await signIn(email, senha);
+    window.location.href = '/';
+  } catch (err) {
+    erro.textContent = err.message || 'Email ou senha incorretos.';
+    erro.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+  }
+});
+
+// Em modo mock, mostra dica
+if (MOCK_MODE) {
+  const dica = document.createElement('div');
+  dica.style.cssText = 'background:#dbe7ff;color:#2563eb;padding:10px 12px;border-radius:8px;font-size:11px;margin-top:14px;line-height:1.5';
+  dica.innerHTML = '<strong>Modo de demonstração ativo</strong><br>Use email: <code>demo@union511.app</code> e qualquer senha';
+  form.appendChild(dica);
+}
+</script>
+</body>
+</html>
