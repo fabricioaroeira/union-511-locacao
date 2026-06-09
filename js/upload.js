@@ -25,11 +25,13 @@ export async function uploadArquivo(file, { entidade_tipo, entidade_id, categori
   }
 
   const supa = await getSupabase();
-  const path = `${entidade_tipo}/${entidade_id}/${Date.now()}_${file.name}`;
+  // Sanitiza nome do arquivo para o Supabase Storage (não aceita acentos, espaços, caracteres especiais)
+  const nomeSanitizado = sanitizarNomeArquivo(file.name);
+  const path = `${entidade_tipo}/${entidade_id}/${Date.now()}_${nomeSanitizado}`;
   const { error: upErr } = await supa.storage.from('arquivos').upload(path, file);
   if (upErr) throw upErr;
 
-  // Registra na tabela
+  // Registra na tabela (guarda o nome ORIGINAL para exibir ao usuário)
   const { data: { user } } = await supa.auth.getUser();
   const { data, error } = await supa.from('arquivos').insert({
     entidade_tipo, entidade_id, categoria,
@@ -41,6 +43,14 @@ export async function uploadArquivo(file, { entidade_tipo, entidade_id, categori
   }).select().single();
   if (error) throw error;
   return data;
+}
+
+function sanitizarNomeArquivo(nome) {
+  return nome
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // remove acentos (NFD + strip diacríticos)
+    .replace(/[^a-zA-Z0-9._-]/g, '_')                   // troca tudo que não for alfanumérico/./_/- por _
+    .replace(/_+/g, '_')                                // colapsa múltiplos _
+    .replace(/^_+|_+$/g, '');                           // remove _ no início/fim
 }
 
 export async function getDownloadURL(storage_path) {
