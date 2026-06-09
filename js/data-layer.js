@@ -268,7 +268,7 @@ export async function saveContrato(input) {
   } else {
     const supa = await getSupabase();
     // Separa lojas (n:n) do contrato base
-    const { lojas, ...contratoBase } = input;
+    const { lojas, id: _idIgnorado, ...contratoBase } = input;
     let contrato;
     if (input.id) {
       const { data, error } = await supa.from('contratos').update(contratoBase).eq('id', input.id).select().single();
@@ -276,7 +276,9 @@ export async function saveContrato(input) {
       contrato = data;
       await supa.from('contrato_lojas').delete().eq('contrato_id', input.id);
     } else {
-      const { data, error } = await supa.from('contratos').insert(contratoBase).select().single();
+      // Remove campos null/undefined/vazios pra deixar o default do banco atuar (ex: id = gen_random_uuid())
+      const payload = Object.fromEntries(Object.entries(contratoBase).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
+      const { data, error } = await supa.from('contratos').insert(payload).select().single();
       if (error) throw new Error('Erro ao criar contrato: ' + (error.message || JSON.stringify(error)));
       contrato = data;
     }
@@ -348,16 +350,20 @@ export async function saveProposta(input) {
     return input;
   } else {
     const supa = await getSupabase();
-    const { lojas, ...base } = input;
+    const { lojas, id: _idIgnorado, ...base } = input;
     let prop;
     if (input.id) {
-      const { data } = await supa.from('propostas').update(base).eq('id', input.id).select().single();
+      const { data, error } = await supa.from('propostas').update(base).eq('id', input.id).select().single();
+      if (error) throw new Error('Erro ao atualizar proposta: ' + error.message);
       prop = data;
       await supa.from('proposta_lojas').delete().eq('proposta_id', input.id);
     } else {
-      const { data } = await supa.from('propostas').insert(base).select().single();
+      const payload = Object.fromEntries(Object.entries(base).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
+      const { data, error } = await supa.from('propostas').insert(payload).select().single();
+      if (error) throw new Error('Erro ao criar proposta: ' + error.message);
       prop = data;
     }
+    if (!prop || !prop.id) throw new Error('Proposta salva mas resposta vazia');
     if (lojas?.length) {
       await supa.from('proposta_lojas').insert(lojas.map(codigo => ({ proposta_id: prop.id, loja_id: parseInt(codigo, 10) })));
     }
