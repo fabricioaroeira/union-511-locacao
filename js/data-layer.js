@@ -269,6 +269,23 @@ export async function saveContrato(input) {
     const supa = await getSupabase();
     // Separa lojas (n:n) do contrato base
     const { lojas, id: _idIgnorado, ...contratoBase } = input;
+
+    // VALIDAÇÃO ANTI-DUPLICAÇÃO: verifica se alguma das lojas selecionadas já tem contrato ativo
+    if (lojas?.length) {
+      const lojasIds = lojas.map(c => parseInt(c, 10));
+      let qConflito = supa.from('contrato_lojas')
+        .select('loja_id, contrato_id, contratos!inner(status)')
+        .in('loja_id', lojasIds)
+        .eq('contratos.status', 'ativo');
+      if (input.id) qConflito = qConflito.neq('contrato_id', input.id); // ao editar, ignora o próprio
+      const { data: conflitos, error: errConf } = await qConflito;
+      if (errConf) throw new Error('Erro ao verificar lojas: ' + errConf.message);
+      if (conflitos && conflitos.length > 0) {
+        const lojasOcupadas = [...new Set(conflitos.map(c => String(c.loja_id).padStart(2, '0')))].sort();
+        throw new Error('Loja(s) já ocupada(s) por contrato ativo: ' + lojasOcupadas.join(', ') + '. Encerre o contrato anterior antes de criar um novo.');
+      }
+    }
+
     let contrato;
     if (input.id) {
       const { data, error } = await supa.from('contratos').update(contratoBase).eq('id', input.id).select().single();
