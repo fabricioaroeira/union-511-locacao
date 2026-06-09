@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Union 511 — Gestão de Locação</title>
-<link rel="manifest" href="/manifest.json">
-<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
 <meta name="theme-color" content="#2563eb">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/app.css">
-<link rel="stylesheet" href="/css/forms.css">
+<link rel="stylesheet" href="./css/app.css">
+<link rel="stylesheet" href="./css/forms.css">
 </head>
 <body>
 <div class="wrap">
@@ -232,7 +232,7 @@ document.getElementById('today').textContent = new Date().toLocaleDateString('pt
 // 3. Logout
 document.getElementById('btn-logout').addEventListener('click', async () => {
   await signOut();
-  window.location.href = '/login.html';
+  window.location.href = './login.html';
 });
 
 // 4. Tabs
@@ -256,7 +256,7 @@ await renderTudo();
 
 // 7. Service Worker (PWA)
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js').catch(err => console.warn('SW:', err));
+  navigator.serviceWorker.register('./service-worker.js').catch(err => console.warn('SW:', err));
 }
 </script>
 </body>

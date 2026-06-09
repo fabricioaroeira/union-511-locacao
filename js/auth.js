@@ -77,7 +77,7 @@ export async function signOut() {
 // ---------------------------------------------------------------------
 export async function requireAuth() {
   if (!(await isLogged())) {
-    window.location.href = '/login.html';
+    window.location.href = './login.html';
     throw new Error('Não autenticado');
   }
 }
