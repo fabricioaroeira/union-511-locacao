@@ -11,7 +11,17 @@ const SVGNS = 'http://www.w3.org/2000/svg';
 function carregarCoords() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return { ...PLANTA_COORDS, ...JSON.parse(stored) };
+    if (stored) {
+      const custom = JSON.parse(stored);
+      // Merge: usa custom mas se a loja tem w/h inválido, força o padrão
+      const merged = { ...PLANTA_COORDS };
+      for (const cod in custom) {
+        const c = custom[cod];
+        if (c && c.w > 0 && c.h > 0) merged[cod] = c;
+        // se w ou h <= 0, mantém o padrão de PLANTA_COORDS
+      }
+      return merged;
+    }
   } catch (e) {}
   return { ...PLANTA_COORDS };
 }
