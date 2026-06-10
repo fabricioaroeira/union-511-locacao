@@ -75,12 +75,13 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 }
 .mapa-fs-header{
   display:flex;justify-content:space-between;align-items:center;
-  padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px
+  padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px;flex-shrink:0
 }
 .mapa-fs-header h2{font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:0}
-.mapa-fs-body{flex:1;overflow:auto;display:flex;flex-direction:column}
-.mapa-fs-body .planta-container{flex:1}
-.mapa-fs-body .planta-wrap{max-width:none}
+.mapa-fs-body{flex:1;overflow:auto;display:flex;flex-direction:column;min-height:0}
+.mapa-fs-body .planta-container{display:flex;flex-direction:column;width:100%}
+.mapa-fs-body .planta-wrap{max-width:none;width:100%;flex-shrink:0}
+.mapa-fs-body .planta-toolbar{flex-shrink:0;position:sticky;bottom:0;background:#f8fafc;margin-top:10px;z-index:2}
 
 /* ===== Planta baixa do empreendimento ===== */
 .planta-container{display:block;width:100%}

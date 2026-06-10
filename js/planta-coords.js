@@ -82,5 +82,4 @@ export const PLANTA_COORDS = {
   '28': { x: 1755, y: 320, w: 60,  h: 90  },  // uso interno
 };
 
-// Status das lojas que são "uso interno JAX 28" (fundo escuro)
 export const LOJAS_USO_INTERNO = ['02', '03', '49', '52'];
