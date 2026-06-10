@@ -4,7 +4,6 @@ node_modules/
 _deploy_zip.zip
 _TUDO_ALL-SQLS-RUN-NO-SUPABASE.sql
 sql/
-imgs/
 js/lojas-coords.js
 vercel.json
-PUSH_GITHUB.bat
+PUSH_GI

@@ -12,6 +12,7 @@ import {
 import { abrirFormContrato } from './forms-contrato.js';
 import { abrirFormProposta } from './forms-proposta.js';
 import { abrirFormLead } from './forms-lead.js';
+import { renderPlanta } from './planta-view.js';
 
 // ---------------------------------------------------------------------
 // TOAST
@@ -35,7 +36,7 @@ export async function renderTudo() {
   safe(() => renderBannerAlertas(contratos, propostas, leads), 'renderBannerAlertas');
   safe(() => renderKpis(kpis), 'renderKpis');
   safe(() => renderFunilComercial(leads, propostas, contratos), 'renderFunilComercial');
-  safe(() => renderGrid(lojas, contratos, propostas), 'renderGrid');
+  safe(() => renderPlanta(lojas, contratos, propostas), 'renderPlanta');
   safe(() => renderLegenda(kpis, propostas), 'renderLegenda');
   safe(() => renderOcupacao(kpis), 'renderOcupacao');
   safe(() => renderMix(contratos, inquilinos), 'renderMix');
@@ -816,6 +817,7 @@ function renderLeads(leads) {
     `;
     lista.appendChild(card);
   });
+
 
   lista.querySelectorAll('[data-edit-lead]').forEach(btn =>
     btn.addEventListener('click', () => abrirFormLead(btn.dataset.editLead))

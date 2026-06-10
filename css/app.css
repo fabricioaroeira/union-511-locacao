@@ -68,6 +68,13 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 .panel{display:none}
 .panel.active{display:block}
 
+/* ===== Planta baixa do empreendimento ===== */
+.planta-container{display:block;width:100%}
+.planta-wrap{position:relative;width:100%;line-height:0;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.planta-wrap img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
+.planta-wrap svg [data-loja]{cursor:pointer}
+.planta-toolbar{font-size:12px}
+
 /* ===== Sub-tabs Financeiro ===== */
 .financeiro-subtabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .fin-subtab{padding:8px 14px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--ink-soft);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;margin-bottom:-1px}
