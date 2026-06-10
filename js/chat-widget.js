@@ -263,6 +263,7 @@ async function gerarContexto() {
       + (tempoStr ? ' | última: ' + tempoStr : ''));
     if (l.observacoes) linhas.push('  notas: ' + l.observacoes);
     if (l.motivo_desistencia) linhas.push('  DESISTÊNCIA: ' + l.motivo_desistencia);
+    const inters = Array.isArray(l.interacoes) ? l.interacoes : [];
     if (inters.length > 0) {
       linhas.push('  Timeline (' + inters.length + '):');
       inters.forEach(i => {

@@ -51,11 +51,11 @@ export const PLANTA_COORDS = {
 
   // Cantos direitos (frontais)
   '26': { x: 1735, y: 320, w: 75,  h: 90  },  // canto SE
-  '27': { x: 1810, y: 320, w: 0,   h: 0   },  // placeholder - ajustar
+  '27': { x: 1810, y: 380, w: 75,  h: 30  },  // canto SE - ajustar posição
 
   // ===== BLOCO ESQUERDO - SUL (fundos) =====
   '49': { x: 100,  y: 240, w: 200, h: 175 },  // uso interno grande
-  '48': { x: 100,  y: 415, w: 200, h: 0   },  // placeholder
+  '48': { x: 200,  y: 380, w: 100, h: 30  },  // ajustar posição
   '47': { x: 305,  y: 240, w: 75,  h: 175 },
   '46': { x: 380,  y: 240, w: 75,  h: 175 },
   '45': { x: 455,  y: 240, w: 75,  h: 175 },
