@@ -368,7 +368,3 @@ document.addEventListener('keydown', (ev) => {
     }
   }
 });
-      atualizarInfo(cod);
-    }
-  }
-});
