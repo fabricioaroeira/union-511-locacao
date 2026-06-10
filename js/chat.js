@@ -3,9 +3,22 @@
 // =====================================================================
 import { chatComClaude } from './claude.js';
 import {
-  getInquilinos, getContratos, getLojasStatus, getPropostas, getKPIs
+  getInquilinos, getContratos, getLojasStatus, getPropostas, getKPIs, getLeads
 } from './data-layer.js';
 import { fmtBR, formatMoney, LABELS_GARANTIA, LABELS_STATUS_PROPOSTA } from './utils.js';
+
+const LABELS_STATUS_LEAD = {
+  interessado: 'Interessado',
+  visitou: 'Visitou',
+  em_analise: 'Em análise',
+  virou_proposta: 'Virou proposta',
+  desistiu: 'Desistiu'
+};
+
+const LABELS_TIPO_INTER = {
+  nota: 'Nota', visita: 'Visita', ligacao: 'Ligação',
+  email: 'Email', mudanca_status: 'Mudança status', reuniao: 'Reunião'
+};
 
 let historico = [];
 let contextoDb = '';
@@ -25,8 +38,8 @@ export async function initChat() {
         <button class="btn outline" id="chat-limpar">Limpar conversa</button>
       </div>
       <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
-        O Claude tem acesso aos dados atuais do app (inquilinos, contratos, propostas, lojas).
-        Pergunte sobre vencimentos, R$/m², ocupação, garantias, comparações, projeções.
+        O Claude tem acesso aos dados atuais do app: inquilinos, contratos, propostas (todas), lojas (com áreas) e leads (CRM com timeline completa).
+        Pergunte sobre vencimentos, R$/m², ocupação, garantias, comparações, projeções, pipeline.
       </div>
 
       <div id="chat-mensagens" style="
@@ -58,12 +71,16 @@ export async function initChat() {
   const sugestoesEl = panel.querySelector('#chat-sugestoes');
 
   const sugestoes = [
+    'Quantos leads ativos temos?',
+    'Qual a taxa de conversão de leads em propostas?',
+    'Quais lojas têm mais interesse no momento?',
+    'Algum lead parado há mais de 30 dias?',
+    'Quais propostas estão acima do R$/m² médio?',
+    'Por que propostas costumam ser recusadas?',
     'Qual contrato vence primeiro?',
-    'Qual o R$/m² médio do portfólio?',
     'Qual a receita potencial máxima ocupando 100%?',
-    'Qual a área de cada loja ocupada?',
-    'Quais contratos têm garantia mais fraca?',
-    'Compare R$/m² entre os contratos'
+    'Compare R$/m² entre os contratos',
+    'Quais corretores trazem mais negócios?'
   ];
   sugestoes.forEach(s => {
     const chip = document.createElement('button');
@@ -77,7 +94,7 @@ export async function initChat() {
 
   if (historico.length === 0) {
     adicionarMensagem(mensagensEl, 'assistant',
-      'Olá Fabricio! Sou o assistente de IA do Union 511. Tenho acesso aos dados do portfólio incluindo áreas de cada loja. Pergunte algo ou clique numa sugestão.');
+      'Olá Fabricio! Sou o assistente de IA do Union 511. Tenho acesso a todos os dados do portfólio: lojas e áreas, contratos, propostas (todas, incluindo recusadas/expiradas/convertidas) e leads do CRM com timeline completa. Pergunte algo ou clique numa sugestão.');
   } else {
     historico.forEach(m => adicionarMensagem(mensagensEl, m.role, m.content));
   }
@@ -151,12 +168,13 @@ async function atualizarContextoSeNecessario() {
 }
 
 async function gerarContextoDb() {
-  const [kpis, inquilinos, contratos, propostas, lojas] = await Promise.all([
+  const [kpis, inquilinos, contratos, propostas, lojas, leads] = await Promise.all([
     getKPIs().catch(() => null),
     getInquilinos().catch(() => []),
     getContratos('ativo').catch(() => []),
-    getPropostas('ativas').catch(() => []),
-    getLojasStatus().catch(() => [])
+    getPropostas('all').catch(() => []),    // TODAS, não só ativas
+    getLojasStatus().catch(() => []),
+    getLeads('todos').catch(() => [])         // TODOS leads
   ]);
 
   const areaByCodigo = {};
@@ -228,24 +246,142 @@ async function gerarContextoDb() {
     );
   });
 
+  // PROPOSTAS — todas (ativas + recusadas + expiradas + convertidas)
+  const propAtivas = propostas.filter(p => ['em_analise', 'aceita_aguardando_docs'].includes(p.status));
+  const propRecusadas = propostas.filter(p => p.status === 'recusada');
+  const propExpiradas = propostas.filter(p => p.status === 'expirada');
+  const propConvertidas = propostas.filter(p => p.status === 'convertida_em_contrato');
+
   linhas.push('');
-  linhas.push('## Propostas ativas (' + propostas.length + ') — com R$/m² calculado');
-  propostas.slice(0, 20).forEach(p => {
+  linhas.push('## Propostas (' + propostas.length + ' total) — todas com R$/m² calculado e benchmarks');
+  linhas.push('Resumo: ' + propAtivas.length + ' ativas, ' + propRecusadas.length + ' recusadas, ' + propExpiradas.length + ' expiradas, ' + propConvertidas.length + ' convertidas em contrato');
+  linhas.push('Benchmarks de mercado: conservador R$ 152/m², medio R$ 176/m², ancora R$ 193/m²');
+
+  propostas.slice(0, 40).forEach(p => {
     const lojasArr = Array.isArray(p.lojas) ? p.lojas : [];
     const lojasStr = lojasArr.join(',');
     const areaPropostaLojas = lojasArr.reduce((s, cod) => s + Number(areaByCodigo[cod] || 0), 0);
     const areaUsar = p.area_total || areaPropostaLojas;
     const rsm = areaUsar > 0 ? (Number(p.valor_aluguel) / Number(areaUsar)) : null;
-    linhas.push(
-      '- ' + (p.cliente_nome || '?') +
-      ' | lojas ' + lojasStr +
-      ' | ' + (areaUsar ? Number(areaUsar).toFixed(2) + ' m²' : 'sem área') +
-      ' | ' + formatMoney(p.valor_aluguel) + '/mês' +
-      (rsm ? ' (R$ ' + rsm.toFixed(2) + '/m²)' : '') +
-      ' | status ' + (LABELS_STATUS_PROPOSTA[p.status] || p.status) +
-      ' | proposta de ' + fmtBR(p.data_proposta)
-    );
+    const vsMedio = rsm ? ((rsm - 176) / 176 * 100).toFixed(1) : null;
+    const vsCons = rsm ? ((rsm - 152) / 152 * 100).toFixed(1) : null;
+    const partes = [
+      '- ' + (p.cliente_nome || '?'),
+      'ramo ' + (p.ramo || '?'),
+      'lojas ' + (lojasStr || '?'),
+      (areaUsar ? Number(areaUsar).toFixed(2) + ' m²' : 'sem area'),
+      formatMoney(p.valor_aluguel) + '/mes',
+      (rsm ? 'R$ ' + rsm.toFixed(2) + '/m² (' + (vsMedio >= 0 ? '+' : '') + vsMedio + '% vs medio, ' + (vsCons >= 0 ? '+' : '') + vsCons + '% vs conservador)' : ''),
+      'carencia ' + (p.meses_carencia == null ? '?' : p.meses_carencia) + 'm',
+      'prazo ' + (p.prazo_opcoes || '?'),
+      'garantia ' + (LABELS_GARANTIA[p.tipo_garantia] || p.tipo_garantia || '?') + (p.detalhes_garantia ? ' (' + p.detalhes_garantia + ')' : ''),
+      'status ' + (LABELS_STATUS_PROPOSTA[p.status] || p.status),
+      'data ' + fmtBR(p.data_proposta),
+      (p.corretor ? 'corretor ' + p.corretor : ''),
+      (p.cv ? 'CV ' + p.cv : ''),
+      (p.motivo_recusa ? 'MOTIVO RECUSA: ' + p.motivo_recusa : ''),
+      (p.observacoes ? 'obs: ' + p.observacoes : '')
+    ].filter(x => x && x.trim());
+    linhas.push(partes.join(' | '));
   });
+
+  // LEADS (CRM) — todos, com timeline completa
+  const leadsAtivos = leads.filter(l => ['interessado', 'visitou', 'em_analise'].includes(l.status));
+  const leadsVirou = leads.filter(l => l.status === 'virou_proposta');
+  const leadsDesistiu = leads.filter(l => l.status === 'desistiu');
+  const totalEncerrados = leadsVirou.length + leadsDesistiu.length;
+  const taxaConversao = totalEncerrados > 0 ? (leadsVirou.length / totalEncerrados * 100).toFixed(1) : null;
+
+  const interessePorLoja = {};
+  leads.forEach(l => {
+    (l.lojas || []).forEach(cod => {
+      interessePorLoja[cod] = (interessePorLoja[cod] || 0) + 1;
+    });
+  });
+  const topLojasCobicadas = Object.entries(interessePorLoja)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([cod, qt]) => 'Loja ' + cod + ' (' + qt + (qt === 1 ? ' lead' : ' leads') + ')');
+
+  const hoje = Date.now();
+  const leadsParados = leadsAtivos.filter(l => {
+    const ultData = l.ultima_interacao_data || l.updated_at || l.created_at;
+    if (!ultData) return false;
+    const dias = (hoje - new Date(ultData)) / 86400000;
+    return dias > 30;
+  });
+
+  let cicloMedio = null;
+  if (leadsVirou.length > 0) {
+    const ciclos = leadsVirou
+      .filter(l => l.data_inicio && l.data_fim)
+      .map(l => (new Date(l.data_fim) - new Date(l.data_inicio)) / 86400000);
+    if (ciclos.length > 0) {
+      cicloMedio = (ciclos.reduce((a, b) => a + b, 0) / ciclos.length).toFixed(0);
+    }
+  }
+
+  linhas.push('');
+  linhas.push('## Leads / CRM (' + leads.length + ' total)');
+  linhas.push('Resumo do funil:');
+  linhas.push('- Ativos: ' + leadsAtivos.length + ' (' + leads.filter(l=>l.status==='interessado').length + ' interessados, ' + leads.filter(l=>l.status==='visitou').length + ' visitaram, ' + leads.filter(l=>l.status==='em_analise').length + ' em analise)');
+  linhas.push('- Viraram proposta: ' + leadsVirou.length);
+  linhas.push('- Desistiram: ' + leadsDesistiu.length);
+  if (taxaConversao !== null) {
+    linhas.push('- Taxa de conversao: ' + taxaConversao + '%');
+  }
+  if (cicloMedio !== null) {
+    linhas.push('- Tempo medio do ciclo (inicio ate virar proposta): ' + cicloMedio + ' dias');
+  }
+  if (topLojasCobicadas.length > 0) {
+    linhas.push('- Top lojas com maior interesse: ' + topLojasCobicadas.join(', '));
+  }
+  if (leadsParados.length > 0) {
+    linhas.push('- ATENCAO: ' + leadsParados.length + ' lead(s) parado(s) ha mais de 30 dias');
+  }
+
+
+  if (leads.length > 0) {
+    linhas.push('');
+    linhas.push('Detalhe de cada lead com timeline completa:');
+    leads.slice(0, 30).forEach(l => {
+      const lojasStr = (l.lojas || []).join(',') || '—';
+      const ultData = l.ultima_interacao_data || l.updated_at || l.created_at;
+      const diasDesde = ultData ? Math.floor((hoje - new Date(ultData)) / 86400000) : null;
+      let tempoStr = 'sem data';
+      if (diasDesde === 0) tempoStr = 'hoje';
+      else if (diasDesde !== null) tempoStr = 'ha ' + diasDesde + ' dias';
+
+      const partes = [];
+      partes.push('LEAD: ' + (l.cliente_nome || '?'));
+      if (l.empresa) partes.push('empresa: ' + l.empresa);
+      partes.push('ramo: ' + (l.ramo_atividade || '?'));
+      partes.push('corretor: ' + (l.corretor || '?'));
+      partes.push('lojas de interesse: ' + lojasStr);
+      partes.push('status: ' + (LABELS_STATUS_LEAD[l.status] || l.status));
+      partes.push('iniciado em ' + fmtBR(l.data_inicio));
+      if (l.data_fim) partes.push('encerrado em ' + fmtBR(l.data_fim));
+      partes.push('ultima atualizacao: ' + tempoStr);
+
+      linhas.push('');
+      linhas.push('• ' + partes.join(' | '));
+
+      if (l.observacoes) linhas.push('  notas: ' + l.observacoes);
+      if (l.motivo_desistencia) linhas.push('  MOTIVO DESISTENCIA: ' + l.motivo_desistencia);
+
+      const interacoes = Array.isArray(l.interacoes) ? l.interacoes : [];
+      if (interacoes.length > 0) {
+        linhas.push('  Timeline com ' + interacoes.length + ' interacoes:');
+        interacoes.forEach(i => {
+          const dt = i.data ? fmtBR(i.data) : '?';
+          const tipo = LABELS_TIPO_INTER[i.tipo] || i.tipo || 'evento';
+          linhas.push('    - ' + dt + ' [' + tipo + '] ' + (i.conteudo || ''));
+        });
+      } else {
+        linhas.push('  (sem interacoes registradas)');
+      }
+    });
+  }
 
   return linhas.join('\n');
 }
