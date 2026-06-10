@@ -4,7 +4,8 @@
 // =====================================================================
 import { chatComClaude } from './claude.js';
 import {
-  getInquilinos, getContratos, getLojasStatus, getPropostas, getKPIs, getLeads
+  getInquilinos, getContratos, getLojasStatus, getPropostas, getKPIs, getLeads,
+  getCobrancas, getInadimplencia, getDespesas, getDREMensal
 } from './data-layer.js';
 import { fmtBR, formatMoney, LABELS_GARANTIA, LABELS_STATUS_PROPOSTA } from './utils.js';
 
@@ -143,13 +144,18 @@ function addMsg(container, tipo, texto) {
 }
 
 async function gerarContexto() {
-  const [kpis, inquilinos, contratos, propostas, lojas, leads] = await Promise.all([
+  const mesAtual = new Date().toISOString().slice(0, 7);
+  const [kpis, inquilinos, contratos, propostas, lojas, leads, cobMes, inad, despMes, dre] = await Promise.all([
     getKPIs().catch(() => null),
     getInquilinos().catch(() => []),
     getContratos('ativo').catch(() => []),
     getPropostas('all').catch(() => []),
     getLojasStatus().catch(() => []),
-    getLeads('todos').catch(() => [])
+    getLeads('todos').catch(() => []),
+    getCobrancas({ mes: mesAtual }).catch(() => []),
+    getInadimplencia().catch(() => []),
+    getDespesas({ mes: mesAtual }).catch(() => []),
+    getDREMensal({}).catch(() => [])
   ]);
 
   const areaByCodigo = {};
@@ -257,7 +263,6 @@ async function gerarContexto() {
       + (tempoStr ? ' | última: ' + tempoStr : ''));
     if (l.observacoes) linhas.push('  notas: ' + l.observacoes);
     if (l.motivo_desistencia) linhas.push('  DESISTÊNCIA: ' + l.motivo_desistencia);
-    const inters = Array.isArray(l.interacoes) ? l.interacoes : [];
     if (inters.length > 0) {
       linhas.push('  Timeline (' + inters.length + '):');
       inters.forEach(i => {
@@ -267,6 +272,44 @@ async function gerarContexto() {
       });
     }
   });
+
+  // FINANCEIRO
+  linhas.push('');
+  linhas.push('## Financeiro (mes ' + mesAtual + ')');
+  if (cobMes.length > 0) {
+    const cheio = cobMes.reduce((s,c) => s + Number(c.valor_cheio || 0), 0);
+    const desc = cobMes.reduce((s,c) => s + Number(c.desconto_concedido || 0), 0);
+    const dev = cobMes.reduce((s,c) => s + Number(c.valor_devido || 0), 0);
+    const pago = cobMes.filter(c => c.status === 'paga').reduce((s,c) => s + Number(c.valor_pago || c.valor_devido || 0), 0);
+    linhas.push('Cobrancas: ' + cobMes.length + ' | Cheio ' + formatMoney(cheio) + ' | Descontos ' + formatMoney(desc) + ' | A receber ' + formatMoney(dev) + ' | Recebido ' + formatMoney(pago));
+    cobMes.slice(0, 20).forEach(c => {
+      linhas.push('- ' + (c.nome_fantasia || c.razao_social) + ' | venc ' + fmtBR(c.vencimento) + ' | ' + formatMoney(c.valor_devido) + ' | ' + c.status);
+    });
+  }
+  if (inad.length > 0) {
+    const totalAt = inad.reduce((s,c) => s + Number(c.total_atualizado || 0), 0);
+    linhas.push('');
+    linhas.push('## INADIMPLENCIA: ' + inad.length + ' em atraso (total ' + formatMoney(totalAt) + ')');
+    inad.forEach(c => {
+      linhas.push('- ' + (c.nome_fantasia || c.razao_social) + ' | ' + c.dias_atraso + ' dias | total ' + formatMoney(c.total_atualizado));
+    });
+  }
+  if (despMes.length > 0) {
+    const totalD = despMes.reduce((s,d) => s + Number(d.valor || 0), 0);
+    linhas.push('');
+    linhas.push('## Despesas: total ' + formatMoney(totalD));
+    despMes.forEach(d => {
+      linhas.push('- [' + d.categoria + '] ' + d.descricao + ' | ' + formatMoney(d.valor) + ' | ' + d.status);
+    });
+  }
+  if (dre.length > 0) {
+    linhas.push('');
+    linhas.push('## DRE - ultimos meses');
+    dre.slice(0, 6).forEach(m => {
+      const mes = new Date(m.mes).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+      linhas.push('- ' + mes + ' | Receita ' + formatMoney(m.receita_recebida) + ' - Despesa ' + formatMoney(m.despesa_paga) + ' = ' + formatMoney(m.resultado_caixa));
+    });
+  }
 
   return linhas.join('\n');
 }

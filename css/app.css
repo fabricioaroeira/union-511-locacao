@@ -68,6 +68,12 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 .panel{display:none}
 .panel.active{display:block}
 
+/* ===== Sub-tabs Financeiro ===== */
+.financeiro-subtabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.fin-subtab{padding:8px 14px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--ink-soft);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;margin-bottom:-1px}
+.fin-subtab:hover{color:var(--ink)}
+.fin-subtab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+
 /* ===== Chat Widget Flutuante (canto inferior direito) ===== */
 .chat-widget{position:fixed;bottom:20px;right:20px;z-index:9999;font-family:inherit}
 .chat-widget-trigger{

@@ -544,6 +544,250 @@ export async function vincularLeadAProposta(leadId, propostaId) {
   return data;
 }
 
+
+// ---------------------------------------------------------------------
+// FINANCEIRO - Cobranças
+// ---------------------------------------------------------------------
+export async function getCobrancas(filtros) {
+  if (MOCK_MODE) return [];
+  const mes = filtros && filtros.mes;
+  const status = filtros && filtros.status;
+  const contrato_id = filtros && filtros.contrato_id;
+  const supa = await getSupabase();
+  let q = supa.from('v_cobrancas_completo').select('*');
+  if (mes) {
+    const inicio = mes + '-01';
+    const fimDate = new Date(mes + '-01T00:00:00');
+    fimDate.setMonth(fimDate.getMonth() + 1);
+    const fimStr = fimDate.toISOString().slice(0, 10);
+    q = q.gte('competencia', inicio).lt('competencia', fimStr);
+  }
+  if (status) q = q.eq('status', status);
+  if (contrato_id) q = q.eq('contrato_id', contrato_id);
+  const { data, error } = await q.order('vencimento', { ascending: true });
+  if (error) throw new Error('Erro ao buscar cobrancas: ' + error.message);
+  return data || [];
+}
+
+export async function gerarCobrancasDoMes(mes) {
+  if (MOCK_MODE) return { qtd: 0 };
+  const supa = await getSupabase();
+  const mesRef = mes || new Date().toISOString().slice(0, 10);
+  const { data, error } = await supa.rpc('gerar_cobrancas_do_mes', { mes_ref: mesRef });
+  if (error) throw new Error('Erro ao gerar cobrancas: ' + error.message);
+  return { qtd: data || 0 };
+}
+
+export async function marcarCobrancaPaga(cobrancaId, pagamento) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const payload = {
+    status: 'paga',
+    data_pagamento: pagamento.data_pagamento,
+    valor_pago: pagamento.valor_pago,
+    multa: pagamento.multa || 0,
+    juros: pagamento.juros || 0,
+    correcao_monetaria: pagamento.correcao || 0
+  };
+  if (pagamento.observacoes) payload.observacoes = pagamento.observacoes;
+  const { error } = await supa.from('cobrancas').update(payload).eq('id', cobrancaId);
+  if (error) throw new Error('Erro ao marcar como paga: ' + error.message);
+}
+
+export async function marcarCobrancaParcial(cobrancaId, pagamento) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const obs = (pagamento.observacoes || '') + ' [Pagamento parcial em desacordo com clausula 5.7]';
+  const { error } = await supa.from('cobrancas').update({
+    status: 'parcial',
+    data_pagamento: pagamento.data_pagamento,
+    valor_pago: pagamento.valor_pago,
+    observacoes: obs
+  }).eq('id', cobrancaId);
+  if (error) throw new Error('Erro ao marcar parcial: ' + error.message);
+}
+
+export async function getInadimplencia() {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('v_inadimplencia').select('*').order('dias_atraso', { ascending: false });
+  if (error) throw new Error('Erro ao buscar inadimplencia: ' + error.message);
+  return data || [];
+}
+
+export async function atualizarStatusAtrasadas() {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const hoje = new Date().toISOString().slice(0, 10);
+  await supa.from('cobrancas').update({ status: 'atrasada' })
+    .eq('status', 'pendente').lt('vencimento', hoje);
+}
+
+// ---------------------------------------------------------------------
+// FINANCEIRO - Despesas e Fornecedores
+// ---------------------------------------------------------------------
+export async function getFornecedores(filtros) {
+  if (MOCK_MODE) return [];
+  const ativo = filtros && filtros.ativo !== undefined ? filtros.ativo : true;
+  const supa = await getSupabase();
+  let q = supa.from('fornecedores').select('*');
+  if (ativo !== null) q = q.eq('ativo', ativo);
+  const { data, error } = await q.order('nome');
+  if (error) throw new Error('Erro ao buscar fornecedores: ' + error.message);
+  return data || [];
+}
+
+export async function saveFornecedor(input) {
+  if (MOCK_MODE) return input;
+  const supa = await getSupabase();
+  const { id, ...base } = input;
+  const payload = Object.fromEntries(Object.entries(base).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
+  if (id) {
+    const { data, error } = await supa.from('fornecedores').update(payload).eq('id', id).select().single();
+    if (error) throw new Error('Erro ao atualizar fornecedor: ' + error.message);
+    return data;
+  }
+  const { data, error } = await supa.from('fornecedores').insert(payload).select().single();
+  if (error) throw new Error('Erro ao criar fornecedor: ' + error.message);
+  return data;
+}
+
+export async function getDespesas(filtros) {
+  if (MOCK_MODE) return [];
+  const mes = filtros && filtros.mes;
+  const status = filtros && filtros.status;
+  const categoria = filtros && filtros.categoria;
+  const supa = await getSupabase();
+  let q = supa.from('despesas').select('*, fornecedores(nome, categoria)');
+  if (mes) {
+    const inicio = mes + '-01';
+    const fimDate = new Date(mes + '-01T00:00:00');
+    fimDate.setMonth(fimDate.getMonth() + 1);
+    q = q.gte('competencia', inicio).lt('competencia', fimDate.toISOString().slice(0, 10));
+  }
+  if (status) q = q.eq('status', status);
+  if (categoria) q = q.eq('categoria', categoria);
+  const { data, error } = await q.order('vencimento', { ascending: true });
+  if (error) throw new Error('Erro ao buscar despesas: ' + error.message);
+  return data || [];
+}
+
+export async function saveDespesa(input) {
+  if (MOCK_MODE) return input;
+  const supa = await getSupabase();
+  const { id, fornecedores: _fj, ...base } = input;
+  const payload = Object.fromEntries(Object.entries(base).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
+  if (id) {
+    const { data, error } = await supa.from('despesas').update(payload).eq('id', id).select().single();
+    if (error) throw new Error('Erro ao atualizar despesa: ' + error.message);
+    return data;
+  }
+  const { data, error } = await supa.from('despesas').insert(payload).select().single();
+  if (error) throw new Error('Erro ao criar despesa: ' + error.message);
+  return data;
+}
+
+export async function marcarDespesaPaga(despesaId, pagamento) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('despesas').update({
+    status: 'paga',
+    data_pagamento: pagamento.data_pagamento,
+    valor_pago: pagamento.valor_pago
+  }).eq('id', despesaId);
+  if (error) throw new Error('Erro ao marcar despesa paga: ' + error.message);
+}
+
+// ---------------------------------------------------------------------
+// FINANCEIRO - Reajustes e IGP-M
+// ---------------------------------------------------------------------
+export async function getReajustes(contrato_id) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  let q = supa.from('reajustes').select('*');
+  if (contrato_id) q = q.eq('contrato_id', contrato_id);
+  const { data, error } = await q.order('data_efetivacao', { ascending: false });
+  if (error) throw new Error('Erro ao buscar reajustes: ' + error.message);
+  return data || [];
+}
+
+export async function aplicarReajuste(reajuste) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { data: reaj, error: errReaj } = await supa.from('reajustes').insert({
+    contrato_id: reajuste.contrato_id,
+    valor_anterior: reajuste.valor_anterior,
+    valor_novo: reajuste.valor_novo,
+    indice: reajuste.indice,
+    variacao_pct: reajuste.variacao_pct,
+    periodo_inicio: reajuste.periodo_inicio,
+    periodo_fim: reajuste.periodo_fim,
+    data_efetivacao: reajuste.data_efetivacao,
+    observacoes: reajuste.observacoes || null,
+    automatico: false
+  }).select().single();
+  if (errReaj) throw new Error('Erro ao registrar reajuste: ' + errReaj.message);
+  const { error: errCont } = await supa.from('contratos').update({ valor_aluguel: reajuste.valor_novo }).eq('id', reajuste.contrato_id);
+  if (errCont) throw new Error('Erro ao atualizar valor do contrato: ' + errCont.message);
+  return reaj;
+}
+
+export async function getIGPMUltimosMeses(meses) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('indices_economicos').select('*').eq('indice', 'IGP-M')
+    .order('competencia', { ascending: false }).limit(meses || 12);
+  if (error) throw new Error('Erro ao buscar IGP-M: ' + error.message);
+  return data || [];
+}
+
+export async function buscarIGPMdoBCB(mesesParaTras) {
+  const fim = new Date();
+  const inicio = new Date(fim.getFullYear(), fim.getMonth() - (mesesParaTras || 24), 1);
+  const fmt = (d) => String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+  const url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.189/dados?formato=json&dataInicial=' + fmt(inicio) + '&dataFinal=' + fmt(fim);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Erro ao buscar IGP-M na API do BCB: ' + r.status);
+  const data = await r.json();
+  if (MOCK_MODE) return data;
+  const supa = await getSupabase();
+  const registros = data.map(d => {
+    const partes = d.data.split('/');
+    return {
+      indice: 'IGP-M',
+      competencia: partes[2] + '-' + partes[1] + '-01',
+      valor_mensal: parseFloat(d.valor)
+    };
+  });
+  if (registros.length > 0) {
+    await supa.from('indices_economicos').upsert(registros, { onConflict: 'indice,competencia' });
+  }
+  return registros;
+}
+
+export function calcularReajusteIGPM(igpmMeses12, valorAtual) {
+  const fatorAcum = igpmMeses12.reduce((acc, m) => acc * (1 + Number(m.valor_mensal) / 100), 1);
+  const variacaoPct = (fatorAcum - 1) * 100;
+  const valorNovo = Math.round(valorAtual * fatorAcum * 100) / 100;
+  return { variacaoPct, valorNovo, fatorAcum };
+}
+
+// ---------------------------------------------------------------------
+// FINANCEIRO - DRE Mensal
+// ---------------------------------------------------------------------
+export async function getDREMensal(filtros) {
+  if (MOCK_MODE) return [];
+  const inicio = filtros && filtros.inicio;
+  const fim = filtros && filtros.fim;
+  const supa = await getSupabase();
+  let q = supa.from('v_dre_mensal').select('*');
+  if (inicio) q = q.gte('mes', inicio);
+  if (fim) q = q.lte('mes', fim);
+  const { data, error } = await q.order('mes', { ascending: false });
+  if (error) throw new Error('Erro ao buscar DRE: ' + error.message);
+  return data || [];
+}
+
 // ---------------------------------------------------------------------
 // ARQUIVOS
 // ---------------------------------------------------------------------

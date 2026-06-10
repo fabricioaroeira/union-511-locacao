@@ -35,6 +35,7 @@
   <button class="tab" data-panel="inquilinos">Inquilinos <span data-counter="inquilinos"></span></button>
   <button class="tab" data-panel="propostas">Propostas <span data-counter="propostas"></span></button>
   <button class="tab" data-panel="leads">Leads <span data-counter="leads"></span></button>
+  <button class="tab" data-panel="financeiro">Financeiro</button>
   <button class="tab" data-panel="vencimentos">Vencimentos/Renovações</button>
   <button class="tab" data-panel="alertas">Alertas/Pendências</button>
   <button class="tab" data-panel="chat-ia">💬 Chat IA</button>
@@ -157,6 +158,29 @@
   </div>
 </div>
 
+<!-- Financeiro -->
+<div class="panel" id="financeiro">
+  <div class="card">
+    <div class="card-head">
+      <h2>💰 Controle financeiro</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="month" id="financeiro-mes" style="padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px">
+        <button class="btn outline" id="btn-financeiro-mes-anterior">‹</button>
+        <button class="btn outline" id="btn-financeiro-mes-proximo">›</button>
+        <button class="btn" id="btn-financeiro-gerar">⚙ Gerar cobranças do mês</button>
+      </div>
+    </div>
+    <div class="financeiro-subtabs" id="financeiro-subtabs">
+      <button class="fin-subtab active" data-fintab="cobrancas">Mês corrente</button>
+      <button class="fin-subtab" data-fintab="inadimplencia">Inadimplência <span id="fin-cnt-inad"></span></button>
+      <button class="fin-subtab" data-fintab="despesas">Despesas</button>
+      <button class="fin-subtab" data-fintab="reajustes">Reajustes</button>
+      <button class="fin-subtab" data-fintab="resumo">Resumo / DRE</button>
+    </div>
+    <div id="fin-conteudo"></div>
+  </div>
+</div>
+
 <!-- Vencimentos -->
 <div class="panel" id="vencimentos">
   <div class="card">
@@ -275,6 +299,8 @@ import { abrirFormProposta } from './js/forms-proposta.js';
 import { abrirFormInquilino } from './js/forms-inquilino.js';
 import { abrirFormAreasLojas } from './js/forms-lojas.js';
 import { abrirFormLead } from './js/forms-lead.js';
+import { abrirFormDespesa, abrirFormFornecedor } from './js/forms-financeiro.js';
+import { renderFinanceiro, setFinSubtab, setFinMes } from './js/financeiro-view.js';
 import { initChat } from './js/chat.js';
 import { initChatWidget } from './js/chat-widget.js';
 
@@ -300,7 +326,43 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     document.getElementById(tab.dataset.panel).classList.add('active');
     if (tab.dataset.panel === 'chat-ia') initChat();
+    if (tab.dataset.panel === 'financeiro') renderFinanceiro();
   });
+});
+
+// 4.5 Sub-tabs da aba Financeiro
+document.querySelectorAll('.fin-subtab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.fin-subtab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    setFinSubtab(t.dataset.fintab);
+  });
+});
+const inpMes = document.getElementById('financeiro-mes');
+const mesAtual = new Date().toISOString().slice(0, 7);
+if (inpMes) {
+  inpMes.value = mesAtual;
+  inpMes.addEventListener('change', () => setFinMes(inpMes.value));
+}
+document.getElementById('btn-financeiro-mes-anterior')?.addEventListener('click', () => {
+  const [a,m] = inpMes.value.split('-').map(Number);
+  const d = new Date(a, m - 2, 1);
+  inpMes.value = d.toISOString().slice(0, 7);
+  setFinMes(inpMes.value);
+});
+document.getElementById('btn-financeiro-mes-proximo')?.addEventListener('click', () => {
+  const [a,m] = inpMes.value.split('-').map(Number);
+  const d = new Date(a, m, 1);
+  inpMes.value = d.toISOString().slice(0, 7);
+  setFinMes(inpMes.value);
+});
+document.getElementById('btn-financeiro-gerar')?.addEventListener('click', async () => {
+  try {
+    const { gerarCobrancasDoMes } = await import('./js/data-layer.js');
+    const r = await gerarCobrancasDoMes(inpMes.value + '-01');
+    mostrarToast(`${r.qtd} cobrança(s) criada(s)`);
+    renderFinanceiro();
+  } catch (e) { mostrarToast('Erro: ' + e.message, 'error'); }
 });
 
 // 5. Botoes CRUD
