@@ -1,15 +1,19 @@
 // =====================================================================
 // Formulário de criar/editar proposta
 // =====================================================================
-import { getProposta, saveProposta, getLojasStatus } from './data-layer.js';
+import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta } from './data-layer.js';
 import { abrirModal, campo, lojasPicker } from './modal.js';
 import { el } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { extrairPropostaDoPDF } from './claude.js';
 
-export async function abrirFormProposta(id = null) {
+export async function abrirFormProposta(id = null, opts = {}) {
   let dados = {};
   if (id) dados = await getProposta(id);
+  // Se veio de um Lead, pré-preenche
+  if (opts?.preenchimento) {
+    dados = { ...dados, ...opts.preenchimento };
+  }
 
   const lojasStatus = await getLojasStatus();
   const body = el('div');
@@ -157,7 +161,13 @@ export async function abrirFormProposta(id = null) {
       if (input.lojas.length === 0) throw new Error('Selecione pelo menos uma loja');
       if (!input.valor_aluguel || input.valor_aluguel <= 0) throw new Error('Informe o valor do aluguel');
       if (!input.data_proposta) throw new Error('Informe a data da proposta');
-      await saveProposta(input);
+      const propostaSalva = await saveProposta(input);
+      // Se veio de um Lead, vincula o lead à proposta criada
+      if (!id && opts?.fromLead && propostaSalva?.id) {
+        try {
+          await vincularLeadAProposta(opts.fromLead, propostaSalva.id);
+        } catch (e) { console.warn('Falha ao vincular lead:', e); }
+      }
       mostrarToast(id ? 'Proposta atualizada' : 'Proposta criada');
       await renderTudo();
     }
@@ -191,16 +201,11 @@ function preencherProposta(body, dados, picker) {
   set('corretor', dados.corretor);
   set('cv', dados.cv);
   if (dados.data_proposta) set('data_proposta', toIso(dados.data_proposta));
-  set('area_total', dados.area_total);
   set('valor_aluguel', dados.valor_aluguel);
   set('meses_carencia', dados.meses_carencia);
   set('prazo_opcoes', dados.prazo_opcoes);
   set('tipo_garantia', dados.tipo_garantia);
   set('detalhes_garantia', dados.detalhes_garantia);
   set('observacoes', dados.observacoes);
-
-  if (Array.isArray(dados.lojas) && dados.lojas.length > 0 && picker?.setSelected) {
-    const numeros = dados.lojas.map(x => Number(String(x).replace(/\D/g, ''))).filter(n => n > 0);
-    picker.setSelected(numeros);
-  }
 }
+

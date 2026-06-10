@@ -2,7 +2,7 @@
 // RENDER — Toda a lógica de exibição do dashboard
 // =====================================================================
 import {
-  getKPIs, getLojasStatus, getInquilinos, getContratos, getPropostas, getArquivos, encerrarContrato
+  getKPIs, getLojasStatus, getInquilinos, getContratos, getPropostas, getArquivos, encerrarContrato, getLeads
 } from './data-layer.js';
 import {
   formatMoney, formatMoneyShort, formatPercent, formatArea,
@@ -11,6 +11,7 @@ import {
 } from './utils.js';
 import { abrirFormContrato } from './forms-contrato.js';
 import { abrirFormProposta } from './forms-proposta.js';
+import { abrirFormLead } from './forms-lead.js';
 
 // ---------------------------------------------------------------------
 // TOAST
@@ -26,8 +27,9 @@ export function mostrarToast(msg, tipo = 'success') {
 // Renderização completa do dashboard
 // ---------------------------------------------------------------------
 export async function renderTudo() {
-  const [kpis, lojas, inquilinos, contratos, propostas] = await Promise.all([
-    getKPIs(), getLojasStatus(), getInquilinos(), getContratos('ativo'), getPropostas('ativas')
+  const [kpis, lojas, inquilinos, contratos, propostas, leads] = await Promise.all([
+    getKPIs(), getLojasStatus(), getInquilinos(), getContratos('ativo'), getPropostas('ativas'),
+    getLeads('todos').catch(() => [])
   ]);
   const safe = (fn, nome) => { try { return fn(); } catch (e) { console.error('render error em ' + nome + ':', e); } };
   safe(() => renderKpis(kpis), 'renderKpis');
@@ -39,18 +41,22 @@ export async function renderTudo() {
   safe(() => renderTabelaDisponiveis(lojas, propostas), 'renderTabelaDisponiveis');
   safe(() => renderInquilinosCards(inquilinos, contratos), 'renderInquilinosCards');
   safe(() => renderPropostas(propostas), 'renderPropostas');
+  safe(() => renderLeads(leads), 'renderLeads');
   safe(() => renderTimeline(contratos), 'renderTimeline');
   safe(() => renderTabelaVencimentos(contratos), 'renderTabelaVencimentos');
   safe(() => renderAlertas(propostas, contratos), 'renderAlertas');
-  safe(() => renderCounters(kpis, propostas), 'renderCounters');
+  safe(() => renderCounters(kpis, propostas, leads), 'renderCounters');
 }
 
-function renderCounters(kpis, propostas) {
+function renderCounters(kpis, propostas, leads = []) {
   document.querySelector('[data-counter="ocupadas"]').textContent = `(${kpis.lojas_ocupadas})`;
   const disp = kpis.lojas_locaveis - kpis.lojas_ocupadas;
   document.querySelector('[data-counter="disponiveis"]').textContent = `(${disp})`;
   document.querySelector('[data-counter="inquilinos"]').textContent = `(${kpis.inquilinos_ativos})`;
   document.querySelector('[data-counter="propostas"]').textContent = `(${propostas.length})`;
+  const leadsAtivos = leads.filter(l => ['interessado','visitou','em_analise'].includes(l.status)).length;
+  const elLeads = document.querySelector('[data-counter="leads"]');
+  if (elLeads) elLeads.textContent = `(${leadsAtivos})`;
 }
 
 // ---------------------------------------------------------------------
@@ -609,4 +615,101 @@ function renderAlertas(propostas, contratos) {
     div.innerHTML = `<div class="alert-title">${a.titulo}</div><div class="alert-body">${a.body}</div>`;
     list.appendChild(div);
   });
+}
+
+// ---------------------------------------------------------------------
+// LEADS (CRM)
+// ---------------------------------------------------------------------
+const STATUS_LEAD_LABELS = {
+  interessado: { label: 'Interessado', cor: '#94a3b8', bg: '#f1f5f9' },
+  visitou: { label: 'Visitou', cor: '#2563eb', bg: '#dbeafe' },
+  em_analise: { label: 'Em análise', cor: '#d97706', bg: '#fef3c7' },
+  virou_proposta: { label: 'Virou proposta', cor: '#16a34a', bg: '#dcfce7' },
+  desistiu: { label: 'Desistiu', cor: '#dc2626', bg: '#fee2e2' }
+};
+
+function renderLeads(leads) {
+  const resumoBox = document.getElementById('leads-resumo');
+  if (!resumoBox) return;
+
+  // Contadores por status
+  const ativos = leads.filter(l => ['interessado','visitou','em_analise'].includes(l.status));
+  const interessados = leads.filter(l => l.status === 'interessado').length;
+  const visitou = leads.filter(l => l.status === 'visitou').length;
+  const emAnalise = leads.filter(l => l.status === 'em_analise').length;
+  const virouProp = leads.filter(l => l.status === 'virou_proposta').length;
+  const desistiu = leads.filter(l => l.status === 'desistiu').length;
+
+  const cards = [
+    { label: 'Interessados', valor: interessados, cor: STATUS_LEAD_LABELS.interessado.cor },
+    { label: 'Visitaram', valor: visitou, cor: STATUS_LEAD_LABELS.visitou.cor },
+    { label: 'Em análise', valor: emAnalise, cor: STATUS_LEAD_LABELS.em_analise.cor },
+    { label: 'Viraram proposta', valor: virouProp, cor: STATUS_LEAD_LABELS.virou_proposta.cor },
+    { label: 'Desistiram', valor: desistiu, cor: STATUS_LEAD_LABELS.desistiu.cor }
+  ];
+  resumoBox.innerHTML = cards.map(c => `
+    <div style="padding:14px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);font-weight:600">${c.label}</div>
+      <div style="font-size:24px;font-weight:700;color:${c.cor};margin-top:4px">${c.valor}</div>
+    </div>
+  `).join('');
+
+  const lista = document.getElementById('leads-list');
+  if (!lista) return;
+
+  if (leads.length === 0) {
+    lista.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum lead registrado ainda. Clique em <strong>+ Novo lead</strong> para começar.</div>';
+    return;
+  }
+
+  // Ordenação: ativos primeiro, depois mais recentes
+  const ordenados = [...leads].sort((a, b) => {
+    const aAtivo = ['interessado','visitou','em_analise'].includes(a.status) ? 0 : 1;
+    const bAtivo = ['interessado','visitou','em_analise'].includes(b.status) ? 0 : 1;
+    if (aAtivo !== bAtivo) return aAtivo - bAtivo;
+    return new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at);
+  });
+
+  lista.innerHTML = '';
+  ordenados.forEach(l => {
+    const statusInfo = STATUS_LEAD_LABELS[l.status] || STATUS_LEAD_LABELS.interessado;
+    const lojasStr = l.lojas?.length > 0 ? l.lojas.join(', ') : '—';
+    const diasDesdeAtualizacao = l.ultima_interacao_data
+      ? Math.floor((Date.now() - new Date(l.ultima_interacao_data)) / 86400000)
+      : Math.floor((Date.now() - new Date(l.updated_at || l.created_at)) / 86400000);
+    const tempoStr = diasDesdeAtualizacao === 0 ? 'hoje'
+      : diasDesdeAtualizacao === 1 ? 'há 1 dia'
+      : `há ${diasDesdeAtualizacao} dias`;
+
+    const card = el('div', { className: 'proposta-card' });
+    card.style.borderLeft = `4px solid ${statusInfo.cor}`;
+    card.innerHTML = `
+      <div class="proposta-head">
+        <div>
+          <div class="proposta-titulo">${l.cliente_nome}${l.empresa ? ' — ' + l.empresa : ''}</div>
+          <div class="proposta-meta-top">${l.ramo_atividade || 'Ramo não informado'}</div>
+        </div>
+        <span class="badge" style="background:${statusInfo.bg};color:${statusInfo.cor};font-weight:600">${statusInfo.label}</span>
+      </div>
+      <div class="proposta-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="proposta-cell"><div class="proposta-cell-label">Lojas de interesse</div><div class="proposta-cell-value" style="font-size:13px">${lojasStr}</div></div>
+        <div class="proposta-cell"><div class="proposta-cell-label">Corretor</div><div class="proposta-cell-value" style="font-size:13px">${l.corretor || '—'}</div></div>
+        <div class="proposta-cell"><div class="proposta-cell-label">Início do estudo</div><div class="proposta-cell-value" style="font-size:13px">${fmtBR(l.data_inicio)}</div></div>
+        <div class="proposta-cell"><div class="proposta-cell-label">Última atualização</div><div class="proposta-cell-value" style="font-size:13px">${tempoStr}</div></div>
+      </div>
+      ${l.observacoes ? `<div style="padding:10px 12px;background:#f8fafc;border-radius:6px;font-size:13px;color:var(--ink-soft);margin-top:10px"><strong>Notas:</strong> ${l.observacoes}</div>` : ''}
+      ${l.motivo_desistencia ? `<div style="padding:10px 12px;background:#fef2f2;border-radius:6px;font-size:13px;color:#991b1b;margin-top:10px"><strong>Motivo de desistência:</strong> ${l.motivo_desistencia}</div>` : ''}
+      <div class="proposta-rodape" style="margin-top:12px">
+        <div style="font-size:12px;color:var(--ink-soft)">${l.qtd_interacoes || 0} interação(ões) registrada(s)</div>
+        <div class="proposta-acoes">
+          <button class="btn outline sm" data-edit-lead="${l.id}">✏️ Abrir / editar</button>
+        </div>
+      </div>
+    `;
+    lista.appendChild(card);
+  });
+
+  lista.querySelectorAll('[data-edit-lead]').forEach(btn =>
+    btn.addEventListener('click', () => abrirFormLead(btn.dataset.editLead))
+  );
 }

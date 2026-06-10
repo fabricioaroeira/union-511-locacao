@@ -426,6 +426,125 @@ export async function converterPropostaEmContrato(propostaId, ajustes = {}) {
 }
 
 // ---------------------------------------------------------------------
+// LEADS (CRM) — clientes em estudo, antes da proposta formal
+// ---------------------------------------------------------------------
+export async function getLeads(statusFilter = 'ativos') {
+  if (MOCK_MODE) {
+    const store = loadStore();
+    let lista = store.leads || [];
+    if (statusFilter === 'ativos') {
+      lista = lista.filter(l => ['interessado','visitou','em_analise'].includes(l.status));
+    } else if (statusFilter !== 'todos') {
+      lista = lista.filter(l => l.status === statusFilter);
+    }
+    return lista;
+  }
+  const supa = await getSupabase();
+  let q = supa.from('v_leads_completo').select('*');
+  if (statusFilter === 'ativos') q = q.in('status', ['interessado','visitou','em_analise']);
+  else if (statusFilter !== 'todos') q = q.eq('status', statusFilter);
+  const { data, error } = await q.order('updated_at', { ascending: false });
+  if (error) throw new Error('Erro ao buscar leads: ' + error.message);
+  return data || [];
+}
+
+export async function getLead(id) {
+  if (MOCK_MODE) return (await getLeads('todos')).find(l => l.id === id);
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('v_leads_completo').select('*').eq('id', id).single();
+  if (error) throw new Error('Erro ao buscar lead: ' + error.message);
+  return data;
+}
+
+export async function saveLead(input) {
+  if (MOCK_MODE) {
+    const store = loadStore();
+    store.leads = store.leads || [];
+    if (input.id) {
+      const idx = store.leads.findIndex(l => l.id === input.id);
+      store.leads[idx] = { ...store.leads[idx], ...input };
+    } else {
+      input.id = nextId('l');
+      input.status = input.status || 'interessado';
+      input.data_inicio = input.data_inicio || new Date().toISOString().slice(0,10);
+      store.leads.push(input);
+    }
+    saveStore(store);
+    return input;
+  }
+  const supa = await getSupabase();
+  const { lojas, interacoes, id: _idIgnorado, qtd_interacoes, ultima_interacao_data, ...base } = input;
+
+  let lead;
+  if (input.id) {
+    const { data, error } = await supa.from('leads').update(base).eq('id', input.id).select().single();
+    if (error) throw new Error('Erro ao atualizar lead: ' + error.message);
+    lead = data;
+    await supa.from('lead_lojas').delete().eq('lead_id', input.id);
+  } else {
+    const payload = Object.fromEntries(Object.entries(base).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
+    const { data, error } = await supa.from('leads').insert(payload).select().single();
+    if (error) throw new Error('Erro ao criar lead: ' + error.message);
+    lead = data;
+  }
+
+  if (!lead || !lead.id) throw new Error('Lead salvo mas resposta vazia');
+
+  if (lojas?.length) {
+    const lojasMapeadas = lojas.map(codigo => ({ lead_id: lead.id, loja_id: parseInt(codigo, 10) }));
+    const { error: errLojas } = await supa.from('lead_lojas').insert(lojasMapeadas);
+    if (errLojas) throw new Error('Erro ao vincular lojas ao lead: ' + errLojas.message);
+  }
+
+  return lead;
+}
+
+export async function adicionarInteracao(leadId, { tipo = 'nota', conteudo, data = null }) {
+  if (!conteudo?.trim()) throw new Error('Informe o conteúdo da interação');
+  if (MOCK_MODE) {
+    const store = loadStore();
+    store.lead_interacoes = store.lead_interacoes || [];
+    const inter = { id: nextId('i'), lead_id: leadId, tipo, conteudo, data: data || new Date().toISOString() };
+    store.lead_interacoes.push(inter);
+    saveStore(store);
+    return inter;
+  }
+  const supa = await getSupabase();
+  const payload = { lead_id: leadId, tipo, conteudo };
+  if (data) payload.data = data;
+  const { data: inserted, error } = await supa.from('lead_interacoes').insert(payload).select().single();
+  if (error) throw new Error('Erro ao adicionar interação: ' + error.message);
+  return inserted;
+}
+
+export async function deleteLead(id) {
+  if (MOCK_MODE) {
+    const store = loadStore();
+    store.leads = (store.leads || []).filter(l => l.id !== id);
+    saveStore(store);
+    return;
+  }
+  const supa = await getSupabase();
+  const { error } = await supa.from('leads').delete().eq('id', id);
+  if (error) throw new Error('Erro ao excluir lead: ' + error.message);
+}
+
+export async function vincularLeadAProposta(leadId, propostaId) {
+  if (MOCK_MODE) {
+    return saveLead({ id: leadId, status: 'virou_proposta', proposta_id: propostaId, data_fim: new Date().toISOString().slice(0,10) });
+  }
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('leads').update({
+    status: 'virou_proposta',
+    proposta_id: propostaId,
+    data_fim: new Date().toISOString().slice(0,10)
+  }).eq('id', leadId).select().single();
+  if (error) throw new Error('Erro ao vincular lead à proposta: ' + error.message);
+  await adicionarInteracao(leadId, { tipo: 'mudanca_status', conteudo: 'Lead convertido em proposta formal.' });
+  return data;
+}
+
+// ---------------------------------------------------------------------
 // ARQUIVOS
 // ---------------------------------------------------------------------
 export async function getArquivos(entidade_tipo, entidade_id) {
@@ -435,20 +554,4 @@ export async function getArquivos(entidade_tipo, entidade_id) {
   const supa = await getSupabase();
   const { data } = await supa.from('arquivos').select('*').eq('entidade_tipo', entidade_tipo).eq('entidade_id', entidade_id);
   return data;
-}
-
-// ---------------------------------------------------------------------
-// VAGAS
-// ---------------------------------------------------------------------
-export async function getVagas() {
-  if (MOCK_MODE) return loadStore().vagas.map(codigo => ({ codigo, contrato_id: null }));
-  const supa = await getSupabase();
-  const { data } = await supa.from('vagas').select('*');
-  return data || [];
-}
-
-export function resetMockData() {
-  if (MOCK_MODE) {
-    localStorage.removeItem(STORE_KEY);
-  }
 }

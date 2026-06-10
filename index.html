@@ -33,6 +33,7 @@
   <button class="tab" data-panel="ocupadas">Ocupadas <span data-counter="ocupadas"></span></button>
   <button class="tab" data-panel="disponiveis">Disponíveis <span data-counter="disponiveis"></span></button>
   <button class="tab" data-panel="inquilinos">Inquilinos <span data-counter="inquilinos"></span></button>
+  <button class="tab" data-panel="leads">Leads <span data-counter="leads"></span></button>
   <button class="tab" data-panel="propostas">Propostas <span data-counter="propostas"></span></button>
   <button class="tab" data-panel="vencimentos">Vencimentos &amp; Renovações</button>
   <button class="tab" data-panel="alertas">Alertas &amp; Pendências</button>
@@ -114,6 +115,21 @@
       <button class="btn outline" id="btn-novo-inquilino">+ Novo inquilino</button>
     </div>
     <div id="tenant-list"></div>
+  </div>
+</div>
+
+<!-- Leads (CRM) -->
+<div class="panel" id="leads">
+  <div class="card">
+    <div class="card-head">
+      <h2>Leads em estudo — clientes acompanhando, antes da proposta formal</h2>
+      <button class="btn" id="btn-novo-lead">+ Novo lead</button>
+    </div>
+    <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
+      Acompanhe clientes que demonstraram interesse mas ainda não fizeram proposta. Quando o cliente decidir formalizar, use o botão "Converter em proposta" no lead.
+    </div>
+    <div id="leads-resumo" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px"></div>
+    <div id="leads-list"></div>
   </div>
 </div>
 
@@ -219,6 +235,7 @@ import { abrirFormContrato } from './js/forms-contrato.js';
 import { abrirFormProposta } from './js/forms-proposta.js';
 import { abrirFormInquilino } from './js/forms-inquilino.js';
 import { abrirFormAreasLojas } from './js/forms-lojas.js';
+import { abrirFormLead } from './js/forms-lead.js';
 import { initChat } from './js/chat.js';
 
 // 1. Verifica autenticação
@@ -250,6 +267,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 document.getElementById('btn-novo-contrato').addEventListener('click', () => abrirFormContrato());
 document.getElementById('btn-novo-inquilino').addEventListener('click', () => abrirFormInquilino());
 document.getElementById('btn-editar-areas').addEventListener('click', () => abrirFormAreasLojas());
+document.getElementById('btn-novo-lead').addEventListener('click', () => abrirFormLead());
 
 // 6. Render inicial
 await renderTudo();

@@ -47,17 +47,8 @@ export async function uploadArquivo(file, { entidade_tipo, entidade_id, categori
 
 function sanitizarNomeArquivo(nome) {
   return nome
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // remove acentos (NFD + strip diacríticos)
-    .replace(/[^a-zA-Z0-9._-]/g, '_')                   // troca tudo que não for alfanumérico/./_/- por _
-    .replace(/_+/g, '_')                                // colapsa múltiplos _
-    .replace(/^_+|_+$/g, '');                           // remove _ no início/fim
-}
-
-export async function getDownloadURL(storage_path) {
-  if (MOCK_MODE || storage_path.startsWith('http') || storage_path.startsWith('file:') || storage_path.startsWith('blob:')) {
-    return storage_path;
-  }
-  const supa = await getSupabase();
-  const { data } = await supa.storage.from('arquivos').createSignedUrl(storage_path, 3600); // 1h
-  return data?.signedUrl;
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
