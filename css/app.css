@@ -68,6 +68,36 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 .panel{display:none}
 .panel.active{display:block}
 
+/* Banner de alertas (Action-first) */
+.alertas-banner-box{
+  display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:8px;
+  border-left:4px solid var(--amber);background:#fef3c7;color:#854F0B;margin-bottom:14px
+}
+.alertas-banner-box.red{border-left-color:var(--red);background:#fee2e2;color:#991b1b}
+.alertas-banner-box.green{border-left-color:var(--green);background:#dcfce7;color:#166534}
+.alertas-banner-icon{font-size:22px;line-height:1}
+.alertas-banner-titulo{font-size:13px;font-weight:600;margin-bottom:2px}
+.alertas-banner-itens{font-size:12px;display:flex;flex-wrap:wrap;gap:14px}
+.alertas-banner-itens span::before{content:'• ';opacity:0.5}
+.alertas-banner-itens span:first-child::before{content:''}
+
+/* Overview grid: mapa + funil */
+.overview-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width: 900px){ .overview-grid{grid-template-columns:1fr} }
+
+/* Funil comercial */
+.funil-step{
+  padding:14px 16px;border-radius:8px;margin-bottom:8px;display:flex;
+  justify-content:space-between;align-items:center;border:1px solid transparent
+}
+.funil-step-leads{background:#fef3c7;color:#854F0B;border-color:#fcd34d}
+.funil-step-propostas{background:#dbeafe;color:#0C447C;border-color:#93c5fd}
+.funil-step-contratos{background:#dcfce7;color:#166534;border-color:#86efac}
+.funil-step-label{font-size:12px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600}
+.funil-step-numero{font-size:24px;font-weight:700}
+.funil-step-detalhe{font-size:11px;opacity:0.85;margin-top:2px}
+.funil-arrow{text-align:center;color:var(--ink-soft);font-size:14px;margin:-2px 0}
+
 /* Cards e tabelas */
 .card{background:var(--card);padding:20px;border-radius:10px;border:1px solid var(--line);margin-bottom:16px}
 .card h2{font-size:14px;font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft)}

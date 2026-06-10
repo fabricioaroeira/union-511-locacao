@@ -32,7 +32,9 @@ export async function renderTudo() {
     getLeads('todos').catch(() => [])
   ]);
   const safe = (fn, nome) => { try { return fn(); } catch (e) { console.error('render error em ' + nome + ':', e); } };
+  safe(() => renderBannerAlertas(contratos, propostas, leads), 'renderBannerAlertas');
   safe(() => renderKpis(kpis), 'renderKpis');
+  safe(() => renderFunilComercial(leads, propostas, contratos), 'renderFunilComercial');
   safe(() => renderGrid(lojas, contratos, propostas), 'renderGrid');
   safe(() => renderLegenda(kpis, propostas), 'renderLegenda');
   safe(() => renderOcupacao(kpis), 'renderOcupacao');
@@ -620,6 +622,113 @@ function renderAlertas(propostas, contratos) {
 // ---------------------------------------------------------------------
 // LEADS (CRM)
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Banner de alertas (Action-first)
+// ---------------------------------------------------------------------
+function renderBannerAlertas(contratos, propostas, leads) {
+  const box = document.getElementById('alertas-banner');
+  if (!box) return;
+
+  const hoje = Date.now();
+  const itens = [];
+
+  // 1. Contratos vencendo nos próximos 120 dias
+  const contratosVencendo = contratos.filter(c => {
+    if (!c.data_termino) return false;
+    const fim = parseBR(c.data_termino);
+    if (!fim || isNaN(fim)) return false;
+    const dias = (fim - hoje) / 86400000;
+    return dias > 0 && dias <= 120;
+  });
+  if (contratosVencendo.length > 0) {
+    itens.push(contratosVencendo.length + ' contrato(s) vencem em até 120 dias');
+  }
+
+  // 2. Leads ativos parados há > 30 dias
+  const leadsParados = (leads || []).filter(l => {
+    if (!['interessado','visitou','em_analise'].includes(l.status)) return false;
+    const ult = l.ultima_interacao_data || l.updated_at || l.created_at;
+    if (!ult) return false;
+    const dias = (hoje - new Date(ult)) / 86400000;
+    return dias > 30;
+  });
+  if (leadsParados.length > 0) {
+    itens.push(leadsParados.length + ' lead(s) parado(s) há mais de 30 dias');
+  }
+
+  // 3. Propostas aceitas há > 7 dias aguardando docs
+  const propAguardando = propostas.filter(p => {
+    if (p.status !== 'aceita_aguardando_docs') return false;
+    const d = parseBR(p.data_proposta);
+    if (!d || isNaN(d)) return false;
+    const dias = (hoje - d) / 86400000;
+    return dias > 7;
+  });
+  if (propAguardando.length > 0) {
+    itens.push(propAguardando.length + ' proposta(s) aguardando documentação há > 7 dias');
+  }
+
+  if (itens.length === 0) {
+    box.innerHTML = '';
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="alertas-banner-box">
+      <div class="alertas-banner-icon">🔔</div>
+      <div style="flex:1">
+        <div class="alertas-banner-titulo">${itens.length} ${itens.length === 1 ? 'item precisa' : 'itens precisam'} da sua atenção</div>
+        <div class="alertas-banner-itens">${itens.map(i => '<span>' + i + '</span>').join('')}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------
+// Funil comercial
+// ---------------------------------------------------------------------
+function renderFunilComercial(leads, propostas, contratos) {
+  const box = document.getElementById('funil-comercial');
+  if (!box) return;
+
+  const leadsAtivos = (leads || []).filter(l => ['interessado','visitou','em_analise'].includes(l.status));
+  const propAtivas = propostas.filter(p => ['em_analise','aceita_aguardando_docs'].includes(p.status));
+  const contratosAtivos = contratos.length;
+
+  const leadsInteressado = leadsAtivos.filter(l => l.status === 'interessado').length;
+  const leadsVisitou = leadsAtivos.filter(l => l.status === 'visitou').length;
+  const leadsAnalise = leadsAtivos.filter(l => l.status === 'em_analise').length;
+
+  const propEmAnalise = propAtivas.filter(p => p.status === 'em_analise').length;
+  const propAceitas = propAtivas.filter(p => p.status === 'aceita_aguardando_docs').length;
+
+  box.innerHTML = `
+    <div class="funil-step funil-step-leads">
+      <div>
+        <div class="funil-step-label">Leads ativos</div>
+        <div class="funil-step-detalhe">${leadsInteressado} interessados · ${leadsVisitou} visitaram · ${leadsAnalise} em análise</div>
+      </div>
+      <div class="funil-step-numero">${leadsAtivos.length}</div>
+    </div>
+    <div class="funil-arrow">↓</div>
+    <div class="funil-step funil-step-propostas">
+      <div>
+        <div class="funil-step-label">Propostas</div>
+        <div class="funil-step-detalhe">${propEmAnalise} em análise · ${propAceitas} aceitas aguardando docs</div>
+      </div>
+      <div class="funil-step-numero">${propAtivas.length}</div>
+    </div>
+    <div class="funil-arrow">↓</div>
+    <div class="funil-step funil-step-contratos">
+      <div>
+        <div class="funil-step-label">Contratos ativos</div>
+        <div class="funil-step-detalhe">Receita: ${formatMoney(contratos.reduce((s,c) => s + Number(c.valor_aluguel || 0), 0))}/mês</div>
+      </div>
+      <div class="funil-step-numero">${contratosAtivos}</div>
+    </div>
+  `;
+}
+
 const STATUS_LEAD_LABELS = {
   interessado: { label: 'Interessado', cor: '#94a3b8', bg: '#f1f5f9' },
   visitou: { label: 'Visitou', cor: '#2563eb', bg: '#dbeafe' },
@@ -662,7 +771,6 @@ function renderLeads(leads) {
     return;
   }
 
-  // Ordenação: ativos primeiro, depois mais recentes
   const ordenados = [...leads].sort((a, b) => {
     const aAtivo = ['interessado','visitou','em_analise'].includes(a.status) ? 0 : 1;
     const bAtivo = ['interessado','visitou','em_analise'].includes(b.status) ? 0 : 1;

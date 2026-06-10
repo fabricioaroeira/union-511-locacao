@@ -33,25 +33,34 @@
   <button class="tab" data-panel="ocupadas">Ocupadas <span data-counter="ocupadas"></span></button>
   <button class="tab" data-panel="disponiveis">Disponíveis <span data-counter="disponiveis"></span></button>
   <button class="tab" data-panel="inquilinos">Inquilinos <span data-counter="inquilinos"></span></button>
-  <button class="tab" data-panel="leads">Leads <span data-counter="leads"></span></button>
   <button class="tab" data-panel="propostas">Propostas <span data-counter="propostas"></span></button>
+  <button class="tab" data-panel="leads">Leads <span data-counter="leads"></span></button>
   <button class="tab" data-panel="vencimentos">Vencimentos &amp; Renovações</button>
   <button class="tab" data-panel="alertas">Alertas &amp; Pendências</button>
   <button class="tab" data-panel="chat-ia">💬 Chat IA</button>
   <button class="tab" data-panel="principios">Princípios</button>
 </div>
 
+<!-- Banner de alertas (renderizado dinamicamente; só aparece se houver pendências) -->
+<section id="alertas-banner"></section>
+
 <!-- KPIs -->
 <section class="kpis" id="kpis"></section>
 
 <!-- Visão Geral -->
 <div class="panel active" id="overview">
-  <div class="card">
-    <div class="card-head">
-      <h2>Mapa do empreendimento — 52 lojas</h2>
+  <div class="overview-grid">
+    <div class="card">
+      <div class="card-head">
+        <h2>Mapa do empreendimento — 52 lojas</h2>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="legend" id="legend"></div>
     </div>
-    <div class="grid" id="grid"></div>
-    <div class="legend" id="legend"></div>
+    <div class="card">
+      <h2>Funil comercial</h2>
+      <div id="funil-comercial"></div>
+    </div>
   </div>
 
   <div class="card">
