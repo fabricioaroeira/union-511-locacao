@@ -6,8 +6,8 @@ import { PLANTA_COORDS, PLANTA_VIEWBOX } from './planta-coords.js';
 import { formatMoney } from './utils.js';
 
 const STORAGE_KEY = 'union511_planta_coords_custom';
+const SVGNS = 'http://www.w3.org/2000/svg';
 
-// Carrega coordenadas customizadas do localStorage (se houver)
 function carregarCoords() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -15,11 +15,8 @@ function carregarCoords() {
   } catch (e) {}
   return { ...PLANTA_COORDS };
 }
-
 function salvarCoords(coords) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(coords));
-  } catch (e) { console.warn('Não foi possível salvar:', e); }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(coords)); } catch (e) {}
 }
 
 let coordsAtuais = carregarCoords();
@@ -30,7 +27,9 @@ let lojaSelecionadaEdicao = null;
 // Render principal
 // =====================================================================
 export function renderPlanta(lojas, contratos, propostas) {
-  const grid = document.getElementById('grid');
+  // Escolhe o container baseado no modo (fullscreen ou normal)
+  const gridId = window._mapaFullscreenAtivo ? 'grid-fs' : 'grid';
+  const grid = document.getElementById(gridId);
   if (!grid) return;
 
   grid.className = 'planta-container';
@@ -43,106 +42,87 @@ export function renderPlanta(lojas, contratos, propostas) {
 
   const wrap = document.createElement('div');
   wrap.className = 'planta-wrap';
-  wrap.style.position = 'relative';
-  wrap.style.width = '100%';
-  wrap.style.maxWidth = '1890px';
-  wrap.style.margin = '0 auto';
 
-  // Imagem da planta (fundo)
   const img = document.createElement('img');
   img.src = './imgs/planta-baixa.png';
   img.alt = 'Planta baixa Union 511';
-  img.style.width = '100%';
-  img.style.display = 'block';
   wrap.appendChild(img);
 
-  // SVG overlay
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
+  const svg = document.createElementNS(SVGNS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${PLANTA_VIEWBOX.w} ${PLANTA_VIEWBOX.h}`);
   svg.setAttribute('preserveAspectRatio', 'none');
-  svg.style.position = 'absolute';
-  svg.style.top = '0';
-  svg.style.left = '0';
-  svg.style.width = '100%';
-  svg.style.height = '100%';
-  svg.style.pointerEvents = 'auto';
+  svg.classList.add('planta-svg');
 
-  // Renderiza cada loja
+  // Camada de retângulos das lojas
   lojas.forEach(l => {
     const cod = l.codigo;
     const coords = coordsAtuais[cod];
     if (!coords || !coords.w || !coords.h) return;
 
-    const g = document.createElementNS(svgNS, 'g');
+    const g = document.createElementNS(SVGNS, 'g');
     g.setAttribute('data-loja', cod);
-    g.style.cursor = modoEdicao ? 'move' : 'pointer';
+    g.classList.add('loja-grupo');
 
-    // Determina cor pelo status
+    // Determina cor/info
     let cor = 'rgba(148,163,184,0.30)';
     let stroke = '#64748b';
     let labelExtra = '';
     if (l.status === 'uso_interno') {
-      cor = 'rgba(30,41,59,0.55)';
-      stroke = '#1e293b';
-      labelExtra = ' (uso interno)';
+      cor = 'rgba(30,41,59,0.55)'; stroke = '#1e293b'; labelExtra = ' (uso interno)';
     } else if (l.status === 'ocupada') {
       const c = contratosByLoja[cod];
       cor = c?.parcial ? 'rgba(139,92,246,0.45)' : 'rgba(22,163,74,0.40)';
       stroke = c?.parcial ? '#7c3aed' : '#16a34a';
       labelExtra = c ? ` · ${l.inquilino_atual || ''} · ${formatMoney(c.valor_aluguel)}/mês` : '';
     } else if (l.status === 'proposta_aceita') {
-      cor = 'rgba(37,99,235,0.40)';
-      stroke = '#2563eb';
+      cor = 'rgba(37,99,235,0.40)'; stroke = '#2563eb';
       const p = propostaByLoja[cod];
       labelExtra = p ? ` · ${p.cliente_nome} (proposta aceita)` : '';
     } else if (l.status === 'proposta_analise') {
-      cor = 'rgba(217,119,6,0.42)';
-      stroke = '#d97706';
+      cor = 'rgba(217,119,6,0.42)'; stroke = '#d97706';
       const p = propostaByLoja[cod];
       labelExtra = p ? ` · ${p.cliente_nome} (em análise)` : '';
     }
 
-    const rect = document.createElementNS(svgNS, 'rect');
+    const rect = document.createElementNS(SVGNS, 'rect');
     rect.setAttribute('x', coords.x);
     rect.setAttribute('y', coords.y);
     rect.setAttribute('width', coords.w);
     rect.setAttribute('height', coords.h);
     rect.setAttribute('fill', cor);
     rect.setAttribute('stroke', stroke);
-    rect.setAttribute('stroke-width', modoEdicao ? '2' : '1');
-    rect.style.transition = 'fill 0.15s';
+    rect.setAttribute('stroke-width', '1');
+    rect.classList.add('loja-rect');
     g.appendChild(rect);
 
-    // Tooltip
-    const title = document.createElementNS(svgNS, 'title');
+    const title = document.createElementNS(SVGNS, 'title');
     const areaTxt = l.area_privativa ? ` · ${Number(l.area_privativa).toFixed(2)} m²` : '';
     title.textContent = `Loja ${cod}${labelExtra}${areaTxt}`;
     g.appendChild(title);
 
-    // Hover - destacar
     g.addEventListener('mouseenter', () => {
-      rect.setAttribute('fill-opacity', '0.8');
-      rect.setAttribute('stroke-width', '2.5');
+      if (!modoEdicao) rect.setAttribute('fill-opacity', '0.85');
     });
     g.addEventListener('mouseleave', () => {
-      rect.setAttribute('fill-opacity', '1');
-      rect.setAttribute('stroke-width', modoEdicao ? '2' : '1');
+      if (!modoEdicao) rect.setAttribute('fill-opacity', '1');
     });
 
-    // Clique normal: nada por enquanto (futuro: abrir info da loja)
-    // Edição: arrastar
     if (modoEdicao) {
+      g.style.cursor = 'move';
       habilitarArrasto(g, rect, cod);
     }
 
     svg.appendChild(g);
   });
 
+  // Camada de handles (sempre por cima)
+  const handlesLayer = document.createElementNS(SVGNS, 'g');
+  handlesLayer.setAttribute('id', 'planta-handles');
+  svg.appendChild(handlesLayer);
+
   wrap.appendChild(svg);
   grid.appendChild(wrap);
 
-  // Toolbar de edição
   renderToolbarEdicao(grid);
 }
 
@@ -152,20 +132,23 @@ export function renderPlanta(lojas, contratos, propostas) {
 function renderToolbarEdicao(container) {
   const toolbar = document.createElement('div');
   toolbar.className = 'planta-toolbar';
-  toolbar.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px;padding:8px;background:#f8fafc;border-radius:6px;border:1px solid var(--line);flex-wrap:wrap';
   toolbar.innerHTML = `
-    <button class="btn outline sm" id="btn-planta-edicao">${modoEdicao ? '✓ Sair do modo edição' : '✏️ Ajustar posição das lojas'}</button>
+    <button class="btn outline sm" id="btn-planta-edicao">${modoEdicao ? '✓ Sair do modo edição' : '✏️ Editar posição e tamanho das lojas'}</button>
     ${modoEdicao ? `
-      <span style="font-size:11px;color:var(--ink-soft)">Clique numa loja pra selecionar. Use ← → ↑ ↓ pra mover (Shift+seta = 10px). + e − pra redimensionar.</span>
+      <span class="planta-help">
+        <strong>Clique numa loja</strong> pra selecionar. Arrasta o <strong>centro</strong> pra mover, ou os <strong>cantos vermelhos</strong> pra redimensionar.
+        Teclas: <kbd>←↑→↓</kbd> mover · <kbd>Shift+seta</kbd>=10px · <kbd>Ctrl+→</kbd>/<kbd>Ctrl+↓</kbd>=aumenta · <kbd>Ctrl+←</kbd>/<kbd>Ctrl+↑</kbd>=diminui
+      </span>
       <button class="btn outline sm" id="btn-planta-reset">↺ Restaurar padrão</button>
       <button class="btn sm" id="btn-planta-export">📋 Copiar coordenadas</button>
-      <span id="planta-info-edicao" style="font-size:11px;color:var(--ink-soft);margin-left:auto"></span>
+      <span id="planta-info-edicao" class="planta-info"></span>
     ` : ''}
   `;
   container.appendChild(toolbar);
 
   document.getElementById('btn-planta-edicao')?.addEventListener('click', async () => {
     modoEdicao = !modoEdicao;
+    lojaSelecionadaEdicao = null;
     const { renderTudo } = await import('./render.js');
     await renderTudo();
   });
@@ -181,90 +164,197 @@ function renderToolbarEdicao(container) {
     document.getElementById('btn-planta-export')?.addEventListener('click', () => {
       const json = JSON.stringify(coordsAtuais, null, 2);
       navigator.clipboard?.writeText(json).then(() => {
-        alert('Coordenadas copiadas! Cole em planta-coords.js pra deixar permanente.');
+        alert('✓ Coordenadas copiadas! Cole aqui no chat pra eu deixar permanente.');
       });
     });
   }
 }
 
 // =====================================================================
-// Arrasto e redimensionamento (modo edição)
+// Arrasto e redimensionamento
 // =====================================================================
 function habilitarArrasto(g, rect, cod) {
-  let startX = 0, startY = 0;
-  let arrastando = false;
-  let origX = 0, origY = 0;
-
   g.addEventListener('mousedown', (ev) => {
+    if (ev.target.classList?.contains('handle')) return; // handle tem seu próprio listener
     ev.preventDefault();
-    arrastando = true;
-    startX = ev.clientX;
-    startY = ev.clientY;
-    origX = Number(rect.getAttribute('x'));
-    origY = Number(rect.getAttribute('y'));
-    lojaSelecionadaEdicao = cod;
-    // Destaca selecionada
-    document.querySelectorAll('[data-loja] rect').forEach(r => r.setAttribute('stroke-width', '2'));
-    rect.setAttribute('stroke-width', '4');
-    rect.setAttribute('stroke', '#ef4444');
-    const info = document.getElementById('planta-info-edicao');
-    if (info) info.textContent = `Loja ${cod} selecionada · x=${origX}, y=${origY}, w=${rect.getAttribute('width')}, h=${rect.getAttribute('height')}`;
+    selecionarLoja(cod);
+    iniciarDrag(ev, rect, cod, 'move');
   });
+}
 
-  const onMove = (ev) => {
-    if (!arrastando) return;
-    const svg = g.closest('svg');
+function selecionarLoja(cod) {
+  lojaSelecionadaEdicao = cod;
+  // Realça
+  document.querySelectorAll('.loja-rect').forEach(r => {
+    r.setAttribute('stroke-width', '1');
+    r.classList.remove('selecionada');
+  });
+  const rect = document.querySelector(`[data-loja="${cod}"] .loja-rect`);
+  if (rect) {
+    rect.setAttribute('stroke-width', '3');
+    rect.setAttribute('stroke', '#ef4444');
+    rect.classList.add('selecionada');
+  }
+  renderHandles(cod);
+  atualizarInfo(cod);
+}
+
+function atualizarInfo(cod) {
+  const c = coordsAtuais[cod];
+  const info = document.getElementById('planta-info-edicao');
+  if (info && c) info.textContent = `Loja ${cod} · x=${c.x}, y=${c.y}, w=${c.w}, h=${c.h}`;
+}
+
+// =====================================================================
+// Handles de redimensionamento (8 cantos/lados)
+// =====================================================================
+function renderHandles(cod) {
+  const layer = document.getElementById('planta-handles');
+  if (!layer) return;
+  layer.innerHTML = '';
+  const c = coordsAtuais[cod];
+  if (!c) return;
+
+  const handles = [
+    { tipo: 'nw', x: c.x,         y: c.y,         cursor: 'nwse-resize' },
+    { tipo: 'n',  x: c.x + c.w/2, y: c.y,         cursor: 'ns-resize'   },
+    { tipo: 'ne', x: c.x + c.w,   y: c.y,         cursor: 'nesw-resize' },
+    { tipo: 'e',  x: c.x + c.w,   y: c.y + c.h/2, cursor: 'ew-resize'   },
+    { tipo: 'se', x: c.x + c.w,   y: c.y + c.h,   cursor: 'nwse-resize' },
+    { tipo: 's',  x: c.x + c.w/2, y: c.y + c.h,   cursor: 'ns-resize'   },
+    { tipo: 'sw', x: c.x,         y: c.y + c.h,   cursor: 'nesw-resize' },
+    { tipo: 'w',  x: c.x,         y: c.y + c.h/2, cursor: 'ew-resize'   }
+  ];
+
+  handles.forEach(h => {
+    const dot = document.createElementNS(SVGNS, 'rect');
+    const size = 12;
+    dot.setAttribute('x', h.x - size/2);
+    dot.setAttribute('y', h.y - size/2);
+    dot.setAttribute('width', size);
+    dot.setAttribute('height', size);
+    dot.setAttribute('fill', '#ef4444');
+    dot.setAttribute('stroke', '#fff');
+    dot.setAttribute('stroke-width', '2');
+    dot.classList.add('handle');
+    dot.setAttribute('data-handle-tipo', h.tipo);
+    dot.style.cursor = h.cursor;
+    dot.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const rect = document.querySelector(`[data-loja="${cod}"] .loja-rect`);
+      iniciarDrag(ev, rect, cod, h.tipo);
+    });
+    layer.appendChild(dot);
+  });
+}
+
+// =====================================================================
+// Lógica de drag (move ou redimensiona)
+// =====================================================================
+function iniciarDrag(ev, rect, cod, modo) {
+  const svg = rect.closest('svg');
+  const startX = ev.clientX;
+  const startY = ev.clientY;
+  const orig = { ...coordsAtuais[cod] };
+
+  const onMove = (e) => {
     const svgRect = svg.getBoundingClientRect();
     const scaleX = PLANTA_VIEWBOX.w / svgRect.width;
     const scaleY = PLANTA_VIEWBOX.h / svgRect.height;
-    const deltaX = (ev.clientX - startX) * scaleX;
-    const deltaY = (ev.clientY - startY) * scaleY;
-    const novoX = Math.round(origX + deltaX);
-    const novoY = Math.round(origY + deltaY);
-    rect.setAttribute('x', novoX);
-    rect.setAttribute('y', novoY);
-    coordsAtuais[cod] = { ...coordsAtuais[cod], x: novoX, y: novoY };
-    const info = document.getElementById('planta-info-edicao');
-    if (info) info.textContent = `Loja ${cod} · x=${novoX}, y=${novoY}, w=${rect.getAttribute('width')}, h=${rect.getAttribute('height')}`;
-  };
-  const onUp = () => {
-    if (arrastando) {
-      arrastando = false;
-      salvarCoords(coordsAtuais);
+    const dx = Math.round((e.clientX - startX) * scaleX);
+    const dy = Math.round((e.clientY - startY) * scaleY);
+    const novo = { ...orig };
+
+    switch (modo) {
+      case 'move':
+        novo.x = orig.x + dx; novo.y = orig.y + dy;
+        break;
+      case 'nw':
+      case 'nw':
+        novo.x = orig.x + dx; novo.y = orig.y + dy;
+        novo.w = orig.w - dx; novo.h = orig.h - dy;
+        break;
+      case 'n':
+        novo.y = orig.y + dy; novo.h = orig.h - dy;
+        break;
+      case 'ne':
+        novo.y = orig.y + dy;
+        novo.w = orig.w + dx; novo.h = orig.h - dy;
+        break;
+      case 'e':
+        novo.w = orig.w + dx;
+        break;
+      case 'se':
+        novo.w = orig.w + dx; novo.h = orig.h + dy;
+        break;
+      case 's':
+        novo.h = orig.h + dy;
+        break;
+      case 'sw':
+        novo.x = orig.x + dx;
+        novo.w = orig.w - dx; novo.h = orig.h + dy;
+        break;
+      case 'w':
+        novo.x = orig.x + dx; novo.w = orig.w - dx;
+        break;
     }
+    if (novo.w < 10) novo.w = 10;
+    if (novo.h < 10) novo.h = 10;
+
+    coordsAtuais[cod] = novo;
+    rect.setAttribute('x', novo.x);
+    rect.setAttribute('y', novo.y);
+    rect.setAttribute('width', novo.w);
+    rect.setAttribute('height', novo.h);
+    renderHandles(cod);
+    atualizarInfo(cod);
+  };
+
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    salvarCoords(coordsAtuais);
   };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 }
 
-// =====================================================================
-// Atalhos de teclado (apenas em modo edição)
-// =====================================================================
 document.addEventListener('keydown', (ev) => {
   if (!modoEdicao || !lojaSelecionadaEdicao) return;
+  const tag = (ev.target.tagName || '').toLowerCase();
+  if (['input','textarea','select'].includes(tag)) return;
+
   const cod = lojaSelecionadaEdicao;
-  const c = coordsAtuais[cod];
-  if (!c) return;
+  const c = { ...coordsAtuais[cod] };
+  if (!c.w) return;
   const passo = ev.shiftKey ? 10 : 1;
   let mudou = false;
-  if (ev.key === 'ArrowLeft')  { c.x -= passo; mudou = true; }
-  if (ev.key === 'ArrowRight') { c.x += passo; mudou = true; }
-  if (ev.key === 'ArrowUp')    { c.y -= passo; mudou = true; }
-  if (ev.key === 'ArrowDown')  { c.y += passo; mudou = true; }
-  if (ev.key === '+')          { c.w += passo; c.h += passo; mudou = true; }
-  if (ev.key === '-')          { c.w = Math.max(10, c.w - passo); c.h = Math.max(10, c.h - passo); mudou = true; }
+
+  if (ev.ctrlKey || ev.metaKey) {
+    if (ev.key === 'ArrowRight') { c.w += passo; mudou = true; }
+    if (ev.key === 'ArrowLeft')  { c.w = Math.max(10, c.w - passo); mudou = true; }
+    if (ev.key === 'ArrowDown')  { c.h += passo; mudou = true; }
+    if (ev.key === 'ArrowUp')    { c.h = Math.max(10, c.h - passo); mudou = true; }
+  } else {
+    if (ev.key === 'ArrowLeft')  { c.x -= passo; mudou = true; }
+    if (ev.key === 'ArrowRight') { c.x += passo; mudou = true; }
+    if (ev.key === 'ArrowUp')    { c.y -= passo; mudou = true; }
+    if (ev.key === 'ArrowDown')  { c.y += passo; mudou = true; }
+  }
+
   if (mudou) {
     ev.preventDefault();
     coordsAtuais[cod] = c;
     salvarCoords(coordsAtuais);
-    const rect = document.querySelector(`[data-loja="${cod}"] rect`);
+    const rect = document.querySelector(`[data-loja="${cod}"] .loja-rect`);
     if (rect) {
       rect.setAttribute('x', c.x);
       rect.setAttribute('y', c.y);
       rect.setAttribute('width', c.w);
       rect.setAttribute('height', c.h);
+      renderHandles(cod);
+      atualizarInfo(cod);
     }
-    const info = document.getElementById('planta-info-edicao');
-    if (info) info.textContent = `Loja ${cod} · x=${c.x}, y=${c.y}, w=${c.w}, h=${c.h}`;
   }
 });

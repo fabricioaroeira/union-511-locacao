@@ -50,18 +50,18 @@
 
 <!-- Visão Geral -->
 <div class="panel active" id="overview">
-  <div class="overview-grid">
-    <div class="card">
-      <div class="card-head">
-        <h2>Mapa do empreendimento — 52 lojas</h2>
-      </div>
-      <div class="grid" id="grid"></div>
-      <div class="legend" id="legend"></div>
+  <div class="card" id="card-mapa">
+    <div class="card-head">
+      <h2>Mapa do empreendimento — 52 lojas</h2>
+      <button class="btn outline sm" id="btn-mapa-fullscreen">🔍 Maximizar</button>
     </div>
-    <div class="card">
-      <h2>Funil comercial</h2>
-      <div id="funil-comercial"></div>
-    </div>
+    <div class="grid" id="grid"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="card">
+    <h2>Funil comercial</h2>
+    <div id="funil-comercial"></div>
   </div>
 
   <div class="card">
@@ -257,6 +257,18 @@
 
 </div>
 
+<!-- Modal full-screen pra mapa -->
+<div id="mapa-fullscreen" class="mapa-fs" style="display:none">
+  <div class="mapa-fs-header">
+    <h2>🗺️ Mapa do empreendimento — Tela cheia</h2>
+    <button class="btn outline" id="btn-mapa-fechar">✕ Fechar</button>
+  </div>
+  <div class="mapa-fs-body">
+    <div class="grid" id="grid-fs"></div>
+    <div class="legend" id="legend-fs"></div>
+  </div>
+</div>
+
 <!-- Container de toasts -->
 <div id="toast-container"></div>
 
@@ -370,6 +382,35 @@ document.getElementById('btn-novo-contrato').addEventListener('click', () => abr
 document.getElementById('btn-novo-inquilino').addEventListener('click', () => abrirFormInquilino());
 document.getElementById('btn-editar-areas').addEventListener('click', () => abrirFormAreasLojas());
 document.getElementById('btn-novo-lead').addEventListener('click', () => abrirFormLead());
+
+// 5.5 Mapa em tela cheia (clona o conteúdo do grid normal)
+document.getElementById('btn-mapa-fullscreen').addEventListener('click', () => {
+  const fs = document.getElementById('mapa-fullscreen');
+  const gridFs = document.getElementById('grid-fs');
+  const gridOrig = document.getElementById('grid');
+  // Move o conteúdo do grid pro fullscreen (substituição temporária)
+  gridFs.innerHTML = gridOrig.innerHTML;
+  // Re-anexa eventos via re-render
+  import('./js/render.js').then(({ renderTudo }) => {
+    fs.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    // Faz o render apontar pra grid-fs também
+    window._mapaFullscreenAtivo = true;
+    renderTudo();
+  });
+});
+document.getElementById('btn-mapa-fechar').addEventListener('click', async () => {
+  document.getElementById('mapa-fullscreen').style.display = 'none';
+  document.body.style.overflow = '';
+  window._mapaFullscreenAtivo = false;
+  const { renderTudo } = await import('./js/render.js');
+  renderTudo();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && window._mapaFullscreenAtivo) {
+    document.getElementById('btn-mapa-fechar')?.click();
+  }
+});
 
 // 6. Render inicial
 await renderTudo();

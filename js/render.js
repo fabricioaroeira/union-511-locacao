@@ -704,28 +704,30 @@ function renderFunilComercial(leads, propostas, contratos) {
   const propAceitas = propAtivas.filter(p => p.status === 'aceita_aguardando_docs').length;
 
   box.innerHTML = `
-    <div class="funil-step funil-step-leads">
-      <div>
-        <div class="funil-step-label">Leads ativos</div>
-        <div class="funil-step-detalhe">${leadsInteressado} interessados · ${leadsVisitou} visitaram · ${leadsAnalise} em análise</div>
+    <div class="funil-horizontal">
+      <div class="funil-step funil-step-leads">
+        <div>
+          <div class="funil-step-label">Leads ativos</div>
+          <div class="funil-step-detalhe">${leadsInteressado} interessados · ${leadsVisitou} visitaram · ${leadsAnalise} em análise</div>
+        </div>
+        <div class="funil-step-numero">${leadsAtivos.length}</div>
       </div>
-      <div class="funil-step-numero">${leadsAtivos.length}</div>
-    </div>
-    <div class="funil-arrow">↓</div>
-    <div class="funil-step funil-step-propostas">
-      <div>
-        <div class="funil-step-label">Propostas</div>
-        <div class="funil-step-detalhe">${propEmAnalise} em análise · ${propAceitas} aceitas aguardando docs</div>
+      <div class="funil-arrow-h">→</div>
+      <div class="funil-step funil-step-propostas">
+        <div>
+          <div class="funil-step-label">Propostas</div>
+          <div class="funil-step-detalhe">${propEmAnalise} em análise · ${propAceitas} aceitas aguardando docs</div>
+        </div>
+        <div class="funil-step-numero">${propAtivas.length}</div>
       </div>
-      <div class="funil-step-numero">${propAtivas.length}</div>
-    </div>
-    <div class="funil-arrow">↓</div>
-    <div class="funil-step funil-step-contratos">
-      <div>
-        <div class="funil-step-label">Contratos ativos</div>
-        <div class="funil-step-detalhe">Receita: ${formatMoney(contratos.reduce((s,c) => s + Number(c.valor_aluguel || 0), 0))}/mês</div>
+      <div class="funil-arrow-h">→</div>
+      <div class="funil-step funil-step-contratos">
+        <div>
+          <div class="funil-step-label">Contratos ativos</div>
+          <div class="funil-step-detalhe">Receita: ${formatMoney(contratos.reduce((s,c) => s + Number(c.valor_aluguel || 0), 0))}/mês</div>
+        </div>
+        <div class="funil-step-numero">${contratosAtivos}</div>
       </div>
-      <div class="funil-step-numero">${contratosAtivos}</div>
     </div>
   `;
 }
@@ -817,7 +819,6 @@ function renderLeads(leads) {
     `;
     lista.appendChild(card);
   });
-
 
   lista.querySelectorAll('[data-edit-lead]').forEach(btn =>
     btn.addEventListener('click', () => abrirFormLead(btn.dataset.editLead))
