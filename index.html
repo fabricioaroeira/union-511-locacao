@@ -236,6 +236,36 @@
 <!-- Container de toasts -->
 <div id="toast-container"></div>
 
+<!-- Chat widget flutuante (canto inferior direito) -->
+<div id="chat-widget" class="chat-widget">
+  <button class="chat-widget-trigger" id="chat-widget-trigger" aria-label="Abrir chat com IA">
+    <span class="chat-widget-icon">💬</span>
+    <span class="chat-widget-pulse"></span>
+  </button>
+  <div class="chat-widget-painel" id="chat-widget-painel">
+    <div class="chat-widget-header">
+      <div class="chat-widget-titulo">
+        <span class="chat-widget-avatar">✨</span>
+        <div>
+          <div class="chat-widget-nome">Claude · Assistente IA</div>
+          <div class="chat-widget-status-txt">Pergunte sobre o portfólio</div>
+        </div>
+      </div>
+      <button class="chat-widget-close" id="chat-widget-close" aria-label="Fechar">×</button>
+    </div>
+    <div class="chat-widget-body">
+      <div id="chat-widget-mensagens"></div>
+    </div>
+    <div class="chat-widget-sugestoes-box">
+      <div id="chat-widget-sugestoes"></div>
+    </div>
+    <form id="chat-widget-form" class="chat-widget-form">
+      <textarea id="chat-widget-input" placeholder="Pergunte algo..." rows="1"></textarea>
+      <button type="submit" id="chat-widget-enviar" aria-label="Enviar">↑</button>
+    </form>
+  </div>
+</div>
+
 <!-- App bootstrap -->
 <script type="module">
 import { requireAuth, getCurrentUser, signOut } from './js/auth.js';
@@ -246,6 +276,7 @@ import { abrirFormInquilino } from './js/forms-inquilino.js';
 import { abrirFormAreasLojas } from './js/forms-lojas.js';
 import { abrirFormLead } from './js/forms-lead.js';
 import { initChat } from './js/chat.js';
+import { initChatWidget } from './js/chat-widget.js';
 
 // 1. Verifica autenticação
 await requireAuth();
@@ -280,6 +311,9 @@ document.getElementById('btn-novo-lead').addEventListener('click', () => abrirFo
 
 // 6. Render inicial
 await renderTudo();
+
+// 6.5 Inicializa chat widget flutuante
+initChatWidget();
 
 // 7. Service Worker (PWA)
 if ('serviceWorker' in navigator) {
