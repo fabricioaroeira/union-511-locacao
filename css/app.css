@@ -60,11 +60,11 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
   border-radius:10px;border:1px solid var(--line);width:fit-content;flex-wrap:wrap
 }
 .tab{
-  padding:8px 16px;font-size:13px;font-weight:500;background:transparent;border:none;
+  padding:10px 18px;font-size:16px;font-weight:500;background:transparent;border:none;
   color:var(--ink-soft);border-radius:6px;cursor:pointer;font-family:inherit
 }
 .tab:hover{color:var(--ink)}
-.tab.active{background:var(--accent);color:white}
+.tab.active{background:var(--accent);color:white;font-weight:600}
 .panel{display:none}
 .panel.active{display:block}
 
