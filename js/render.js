@@ -155,7 +155,7 @@ function renderLegenda(k, propostas) {
     <div class="legend-item"><div class="legend-dot" style="background:var(--violet)"></div>Parcial</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Proposta aceita (${pAceitas})</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>Proposta em análise (${pAnalise})</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#94a3b8"></div>Disponível (${livres})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Disponível (${livres})</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1a2332"></div>Uso interno (${k.lojas_internas})</div>
   `;
 }

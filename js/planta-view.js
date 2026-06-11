@@ -73,9 +73,9 @@ export function renderPlanta(lojas, contratos, propostas) {
     g.setAttribute('data-loja', cod);
     g.classList.add('loja-grupo');
 
-    // Determina cor/info
-    let cor = 'rgba(148,163,184,0.30)';
-    let stroke = '#64748b';
+    // Determina cor/info (default = disponível em verde)
+    let cor = 'rgba(22,163,74,0.40)';
+    let stroke = '#16a34a';
     let labelExtra = '';
     if (l.status === 'uso_interno') {
       cor = 'rgba(30,41,59,0.55)'; stroke = '#1e293b'; labelExtra = ' (uso interno)';
