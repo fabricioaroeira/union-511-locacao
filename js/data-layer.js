@@ -388,6 +388,34 @@ export async function saveProposta(input) {
   }
 }
 
+// Excluir proposta — reverte lead vinculado pra estágio anterior (se houver) e apaga
+export async function deleteProposta(propostaId, opts = {}) {
+  if (MOCK_MODE) {
+    const store = loadStore();
+    store.propostas = store.propostas.filter(p => p.id !== propostaId);
+    saveStore(store);
+    return;
+  }
+  const supa = await getSupabase();
+  // 1. Procura lead vinculado a essa proposta
+  const { data: leads } = await supa.from('leads').select('id').eq('proposta_id', propostaId);
+  // 2. Reverte status do lead (devolve ao estágio do opts.reverterParaStatus, default = 'interessado')
+  if (leads && leads.length > 0) {
+    const novoStatus = opts.reverterParaStatus || 'interessado';
+    for (const l of leads) {
+      await supa.from('leads').update({
+        status: novoStatus,
+        proposta_id: null,
+        data_fim: null
+      }).eq('id', l.id);
+    }
+  }
+  // 3. Deleta proposta_lojas e a proposta
+  await supa.from('proposta_lojas').delete().eq('proposta_id', propostaId);
+  const { error } = await supa.from('propostas').delete().eq('id', propostaId);
+  if (error) throw new Error('Erro ao excluir proposta: ' + error.message);
+}
+
 // Converter proposta em contrato — copia campos e marca proposta como convertida
 export async function converterPropostaEmContrato(propostaId, ajustes = {}) {
   const prop = await getProposta(propostaId);

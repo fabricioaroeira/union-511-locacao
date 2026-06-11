@@ -1,7 +1,7 @@
 // =====================================================================
 // Formulário de criar/editar proposta
 // =====================================================================
-import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta, getLead } from './data-layer.js';
+import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta, getLead, deleteProposta } from './data-layer.js';
 import { abrirModal, campo, lojasPicker } from './modal.js';
 import { el, REF_RSM } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
@@ -162,6 +162,52 @@ export async function abrirFormProposta(id = null, opts = {}) {
   const sec4 = el('div', { className:'form-section' });
   sec4.appendChild(campo({ name:'observacoes', label:'Observações da proposta', type:'textarea', value:dados.observacoes, full:true, rows:3, hint:'Apenas o que o cliente formalizou na proposta. Anotações internas do lead ficam no próprio lead.' }));
   body.appendChild(sec4);
+
+  // Zona de perigo (só em edição) — Excluir proposta
+  if (id) {
+    const secDanger = el('div');
+    secDanger.style.cssText = 'margin-top:24px;padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px';
+    secDanger.innerHTML =
+      '<div style="font-weight:600;color:#991b1b;margin-bottom:6px">⚠️ Excluir proposta</div>' +
+      '<div style="font-size:12px;color:#7f1d1d;margin-bottom:10px">Se houver lead vinculado, ele volta para o status que você escolher. A proposta será apagada permanentemente.</div>';
+    const linhaDel = el('div');
+    linhaDel.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    // Seletor de "voltar lead pra qual status?"
+    const selStatus = el('select');
+    selStatus.style.cssText = 'padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px';
+    const opcoes = [
+      { v: 'interessado', l: 'Interessado' },
+      { v: 'visitou',     l: 'Visitou' },
+      { v: 'em_analise',  l: 'Em análise' }
+    ];
+    opcoes.forEach(function(o) {
+      const op = el('option', { value: o.v }, 'Voltar lead pra: ' + o.l);
+      selStatus.appendChild(op);
+    });
+    const btnDel = el('button', { type: 'button' }, '🗑 Excluir proposta');
+    btnDel.style.cssText = 'padding:8px 14px;background:#dc2626;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600';
+    btnDel.addEventListener('click', async function() {
+      const confirmacao = confirm('Tem certeza que deseja excluir esta proposta?\n\nSe houver lead vinculado, ele voltará para o status "' + selStatus.options[selStatus.selectedIndex].text.replace('Voltar lead pra: ','') + '".\n\nEsta ação NÃO pode ser desfeita.');
+      if (!confirmacao) return;
+      btnDel.disabled = true;
+      btnDel.textContent = 'Excluindo...';
+      try {
+        await deleteProposta(id, { reverterParaStatus: selStatus.value });
+        mostrarToast('Proposta excluída. Lead retomado.', 'success');
+        const { fecharModal } = await import('./modal.js');
+        fecharModal();
+        await renderTudo();
+      } catch (err) {
+        mostrarToast('Erro ao excluir: ' + err.message, 'error');
+        btnDel.disabled = false;
+        btnDel.textContent = '🗑 Excluir proposta';
+      }
+    });
+    linhaDel.appendChild(selStatus);
+    linhaDel.appendChild(btnDel);
+    secDanger.appendChild(linhaDel);
+    body.appendChild(secDanger);
+  }
 
   // Listeners pra recalcular R$/m² em tempo real
   setTimeout(function() {
