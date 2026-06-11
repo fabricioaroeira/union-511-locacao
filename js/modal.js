@@ -95,6 +95,8 @@ export function campo({ name, label, type = 'text', value = '', required = false
     });
   } else {
     input = el('input', { type, name, value: value ?? '', placeholder: placeholder || '' });
+    // type=number: aceitar decimais (sem step, o padrão é 1 = só inteiros)
+    if (type === 'number') input.step = 'any';
   }
   if (required) input.required = true;
   div.appendChild(input);
@@ -192,8 +194,6 @@ export function lojasPicker({ lojasStatus, selecionadas = [], permitirOcupadas =
       codigos.forEach(cod => {
         const codStr = String(cod);
         sel.add(codStr);
-        const chip = picker.querySelector('.chip[data-codigo="' + codStr + '"]');
-        if (chip && !chip.classList.contains('interna')) chip.classList.add('selected');
       });
       atualizarContagem();
       if (onChange) onChange(getSelectedArr(), getAreaTotal());
