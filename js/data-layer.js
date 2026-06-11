@@ -799,3 +799,53 @@ export async function getArquivos(entidade_tipo, entidade_id) {
   const { data } = await supa.from('arquivos').select('*').eq('entidade_tipo', entidade_tipo).eq('entidade_id', entidade_id);
   return data;
 }
+
+// =====================================================================
+// DOCUMENTOS DE CONTRATO (seguros, certidões, vistorias, AVCB...)
+// =====================================================================
+export const TIPOS_DOCUMENTO = {
+  seguro_fianca:               'Seguro fiança',
+  seguro_incendio:             'Seguro incêndio',
+  certidao_negativa_federal:   'Certidão negativa federal',
+  certidao_negativa_municipal: 'Certidão negativa municipal',
+  certidao_negativa_estadual:  'Certidão negativa estadual',
+  certidao_trabalhista:        'Certidão trabalhista',
+  vistoria_inicial:            'Vistoria inicial',
+  vistoria_final:              'Vistoria final',
+  laudo_avcb:                  'Laudo AVCB',
+  alvara_funcionamento:        'Alvará de funcionamento',
+  outros:                      'Outros'
+};
+
+export async function getDocumentosByContrato(contratoId) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('documentos_contrato')
+    .select('*').eq('contrato_id', contratoId).order('data_validade');
+  if (error) throw new Error('Erro ao buscar documentos: ' + error.message);
+  return data || [];
+}
+
+export async function saveDocumento(input) {
+  if (MOCK_MODE) return input;
+  const supa = await getSupabase();
+  const { id, ...base } = input;
+  const payload = Object.fromEntries(
+    Object.entries(base).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+  );
+  if (id) {
+    const { data, error } = await supa.from('documentos_contrato').update(payload).eq('id', id).select().single();
+    if (error) throw new Error('Erro ao atualizar documento: ' + error.message);
+    return data;
+  }
+  const { data, error } = await supa.from('documentos_contrato').insert(payload).select().single();
+  if (error) throw new Error('Erro ao criar documento: ' + error.message);
+  return data;
+}
+
+export async function deleteDocumento(id) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('documentos_contrato').delete().eq('id', id);
+  if (error) throw new Error('Erro ao excluir documento: ' + error.message);
+}

@@ -1,9 +1,10 @@
 // =====================================================================
 // Formulário de criar/editar contrato
 // =====================================================================
-import { getContrato, saveContrato, getInquilinos, getLojasStatus, getProposta, saveInquilino } from './data-layer.js';
+import { getContrato, saveContrato, getInquilinos, getLojasStatus, getProposta, saveInquilino,
+         getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO } from './data-layer.js';
 import { abrirModal, campo, lojasPicker } from './modal.js';
-import { el } from './utils.js';
+import { el, fmtBR, parseBR } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { extrairContratoDoPDF } from './claude.js';
 
@@ -103,6 +104,43 @@ export async function abrirFormContrato(id = null, opts = {}) {
   grid5.appendChild(campo({ name: 'observacoes', label: 'Observações', type: 'textarea', value: dados.observacoes, full: true, rows: 4 }));
   sec5.appendChild(grid5);
   body.appendChild(sec5);
+
+  // Documentos do contrato (só ao editar contrato existente — precisa do id pra vincular)
+  if (id) {
+    const secDocs = el('div', { className: 'form-section' });
+    secDocs.appendChild(el('div', { className: 'form-section-title' }, 'Documentos do contrato (seguros, certidões, AVCB)'));
+    secDocs.appendChild(el('div', {
+      style: { fontSize: '12px', color: 'var(--ink-soft)', marginBottom: '10px' }
+    }, 'Cadastre documentos com data de validade para receber alertas automáticos antes do vencimento.'));
+    const docsContainer = el('div', { id: 'docs-list-' + id });
+    secDocs.appendChild(docsContainer);
+    const btnAdd = el('button', { type: 'button', className: 'btn outline sm' }, '+ Adicionar documento');
+    btnAdd.style.marginTop = '10px';
+    const formContainer = el('div', { style: { display: 'none', marginTop: '12px' } });
+    secDocs.appendChild(btnAdd);
+    secDocs.appendChild(formContainer);
+
+    const recarregar = async () => {
+      const docs = await getDocumentosByContrato(id);
+      renderDocsList(docs, docsContainer, mostrarForm);
+    };
+
+    function mostrarForm(docEdit) {
+      btnAdd.style.display = 'none';
+      formContainer.style.display = 'block';
+      formContainer.innerHTML = '';
+      formContainer.appendChild(renderDocForm(id, docEdit || null, async () => {
+        formContainer.innerHTML = '';
+        formContainer.style.display = 'none';
+        btnAdd.style.display = 'inline-block';
+        await recarregar();
+      }));
+    }
+
+    btnAdd.addEventListener('click', () => mostrarForm(null));
+    body.appendChild(secDocs);
+    recarregar().catch(err => console.error('Erro ao carregar documentos:', err));
+  }
 
   // Upload OBRIGATÓRIO de contrato assinado (somente em contratos NOVOS)
   const isNovo = !id;
@@ -313,4 +351,117 @@ function preencherCamposComExtracao(body, dados, picker, inquilinos) {
   if (dados.data_assinatura) set('data_assinatura', toIso(dados.data_assinatura));
   if (dados.data_inicio) set('data_inicio', toIso(dados.data_inicio));
   return novoInquilinoData;
+}
+
+
+// =====================================================================
+// Helpers de Documentos
+// =====================================================================
+function urgenciaDoc(dataValidade) {
+  if (!dataValidade) return { cor: '#94a3b8', label: '—' };
+  const d = new Date(dataValidade);
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+  const dias = Math.floor((d - hoje) / 86400000);
+  if (dias < 0)   return { cor: '#7f1d1d', label: 'Vencido há ' + Math.abs(dias) + 'd', bg: '#fef2f2' };
+  if (dias <= 7)  return { cor: '#dc2626', label: 'Vence em ' + dias + 'd', bg: '#fef2f2' };
+  if (dias <= 30) return { cor: '#ea580c', label: 'Vence em ' + dias + 'd', bg: '#fff7ed' };
+  if (dias <= 60) return { cor: '#ca8a04', label: 'Vence em ' + dias + 'd', bg: '#fefce8' };
+  return { cor: '#16a34a', label: 'OK (' + dias + 'd)', bg: '#f0fdf4' };
+}
+
+function renderDocsList(docs, container, abrirEditar) {
+  container.innerHTML = '';
+  if (!docs || docs.length === 0) {
+    container.innerHTML = '<div style="padding:14px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;text-align:center;color:var(--ink-soft);font-size:13px">Nenhum documento cadastrado ainda.</div>';
+    return;
+  }
+  docs.forEach(d => {
+    const u = urgenciaDoc(d.data_validade);
+    const row = el('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1.4fr 1fr 130px 110px 60px;gap:10px;align-items:center;padding:8px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
+    const validadeStr = d.data_validade ? new Date(d.data_validade).toLocaleDateString('pt-BR') : '—';
+    row.innerHTML =
+      '<div><div style="font-weight:600">' + (TIPOS_DOCUMENTO[d.tipo] || d.tipo) + '</div>' +
+        '<div style="font-size:11px;color:var(--ink-soft)">' + (d.descricao || (d.numero ? 'Nº ' + d.numero : '—')) + '</div></div>' +
+      '<div style="color:var(--ink-soft)">' + (d.numero ? 'Nº ' + d.numero : '') + '</div>' +
+      '<div>Vence: <strong>' + validadeStr + '</strong></div>' +
+      '<div><span style="background:' + u.bg + ';color:' + u.cor + ';padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap">' + u.label + '</span></div>' +
+      '<div style="display:flex;gap:4px;justify-content:flex-end">' +
+        '<button type="button" class="btn outline sm" data-edit-doc>✏️</button>' +
+        '<button type="button" class="btn ghost sm" data-del-doc style="color:#dc2626">🗑️</button>' +
+      '</div>';
+    row.querySelector('[data-edit-doc]').addEventListener('click', () => abrirEditar(d));
+    row.querySelector('[data-del-doc]').addEventListener('click', async () => {
+      if (!confirm('Excluir o documento "' + (TIPOS_DOCUMENTO[d.tipo] || d.tipo) + '"?')) return;
+      try {
+        await deleteDocumento(d.id);
+        mostrarToast('Documento excluído', 'success');
+        // Recarrega
+        const docs2 = await getDocumentosByContrato(d.contrato_id);
+        renderDocsList(docs2, container, abrirEditar);
+      } catch (err) {
+        mostrarToast('Erro ao excluir: ' + err.message, 'error');
+      }
+    });
+    container.appendChild(row);
+  });
+}
+
+function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
+  const box = el('div');
+  box.style.cssText = 'padding:14px;background:#f8fafc;border:1px solid var(--line);border-radius:6px';
+  const tit = el('div', { style: { fontWeight: '600', marginBottom: '10px' } }, doc ? 'Editar documento' : 'Novo documento');
+  box.appendChild(tit);
+
+  const tipoOptions = Object.entries(TIPOS_DOCUMENTO).map(([v, l]) => ({ value: v, label: l }));
+  const grid = el('div', { className: 'form-grid' });
+  grid.appendChild(campo({ name: 'doc_tipo', label: 'Tipo', type: 'select', options: tipoOptions, value: doc?.tipo || 'seguro_fianca', required: true }));
+  grid.appendChild(campo({ name: 'doc_numero', label: 'Número/apólice', value: doc?.numero || '' }));
+  grid.appendChild(campo({ name: 'doc_descricao', label: 'Descrição (opcional)', value: doc?.descricao || '', full: true }));
+  grid.appendChild(campo({ name: 'doc_emissao', label: 'Data de emissão', type: 'date', value: doc?.data_emissao || '' }));
+  grid.appendChild(campo({ name: 'doc_validade', label: 'Data de validade', type: 'date', value: doc?.data_validade || '', required: true }));
+  grid.appendChild(campo({ name: 'doc_obs', label: 'Observações', type: 'textarea', value: doc?.observacoes || '', full: true, rows: 2 }));
+  box.appendChild(grid);
+
+  const acoes = el('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' } });
+  const btnSalvar = el('button', { type: 'button', className: 'btn sm' }, doc ? 'Salvar alterações' : 'Adicionar documento');
+  const btnCancelar = el('button', { type: 'button', className: 'btn ghost sm' }, 'Cancelar');
+  acoes.appendChild(btnCancelar);
+  acoes.appendChild(btnSalvar);
+  box.appendChild(acoes);
+
+  btnCancelar.addEventListener('click', () => onSalvarOuCancelar());
+  btnSalvar.addEventListener('click', async () => {
+    btnSalvar.disabled = true;
+    btnSalvar.textContent = 'Salvando...';
+    try {
+      const tipo = box.querySelector('[name=doc_tipo]').value;
+      const numero = box.querySelector('[name=doc_numero]').value;
+      const descricao = box.querySelector('[name=doc_descricao]').value;
+      const emissao = box.querySelector('[name=doc_emissao]').value;
+      const validade = box.querySelector('[name=doc_validade]').value;
+      const obs = box.querySelector('[name=doc_obs]').value;
+      if (!validade) throw new Error('Data de validade é obrigatória');
+      const payload = {
+        contrato_id: contratoId,
+        tipo,
+        numero: numero || null,
+        descricao: descricao || null,
+        data_emissao: emissao || null,
+        data_validade: validade,
+        observacoes: obs || null
+      };
+      if (doc?.id) payload.id = doc.id;
+      await saveDocumento(payload);
+      mostrarToast(doc ? 'Documento atualizado' : 'Documento adicionado', 'success');
+      onSalvarOuCancelar();
+    } catch (err) {
+      mostrarToast('Erro ao salvar: ' + err.message, 'error');
+      btnSalvar.disabled = false;
+      btnSalvar.textContent = doc ? 'Salvar alterações' : 'Adicionar documento';
+    }
+  });
+
+  return box;
 }
