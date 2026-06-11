@@ -47,8 +47,24 @@ export async function abrirFormContrato(id = null, opts = {}) {
   // Lojas
   const sec2 = el('div', { className: 'form-section' });
   sec2.appendChild(el('div', { className: 'form-section-title' }, 'Lojas'));
-  const picker = lojasPicker({ lojasStatus, selecionadas: dados.lojas || [], permitirOcupadas: !!id });
+  const areaIndicador = el('div');
+  areaIndicador.style.cssText = 'font-size:12px;color:var(--ink-soft);margin-top:6px';
+  const picker = lojasPicker({
+    lojasStatus,
+    selecionadas: dados.lojas || [],
+    permitirOcupadas: !!id,
+    onChange: function(lojasSel, areaTotal) {
+      areaIndicador.innerHTML = areaTotal > 0
+        ? '<strong style="color:var(--ink)">' + areaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²</strong> calculado a partir das lojas selecionadas'
+        : '';
+    }
+  });
   sec2.appendChild(picker.el);
+  sec2.appendChild(areaIndicador);
+  setTimeout(function() {
+    var a = picker.getAreaTotal ? picker.getAreaTotal() : 0;
+    if (a > 0) areaIndicador.innerHTML = '<strong style="color:var(--ink)">' + a.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²</strong> calculado a partir das lojas selecionadas';
+  }, 50);
   body.appendChild(sec2);
 
   // Preço e prazo

@@ -109,7 +109,7 @@ export function campo({ name, label, type = 'text', value = '', required = false
 // ---------------------------------------------------------------------
 // Picker de lojas (grid de chips) com instrução e botão Limpar
 // ---------------------------------------------------------------------
-export function lojasPicker({ lojasStatus, selecionadas = [], permitirOcupadas = false }) {
+export function lojasPicker({ lojasStatus, selecionadas = [], permitirOcupadas = false, onChange = null }) {
   const wrapper = el('div');
   const contador = el('div', {
     style: { fontSize: '12px', color: 'var(--ink-soft)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }
@@ -152,27 +152,40 @@ export function lojasPicker({ lojasStatus, selecionadas = [], permitirOcupadas =
     }
 
     if (!bloqueado) {
-      chip.title = 'Clique para selecionar / remover';
+      chip.title = l.area_privativa ? 'Clique para selecionar / remover · ' + l.area_privativa + ' m²' : 'Clique para selecionar / remover';
       chip.addEventListener('click', () => {
         if (sel.has(l.codigo)) { sel.delete(l.codigo); chip.classList.remove('selected'); }
         else { sel.add(l.codigo); chip.classList.add('selected'); }
         atualizarContagem();
+        if (onChange) onChange(getSelectedArr(), getAreaTotal());
       });
     }
     picker.appendChild(chip);
   });
 
+  function getSelectedArr() { return Array.from(sel).sort((a,b) => Number(a) - Number(b)); }
+  function getAreaTotal() {
+    let total = 0;
+    sel.forEach(cod => {
+      const loja = lojasStatus.find(l => l.codigo === cod);
+      if (loja && loja.area_privativa) total += Number(loja.area_privativa);
+    });
+    return Math.round(total * 100) / 100;
+  }
+
   btnLimpar.addEventListener('click', () => {
     sel.clear();
     picker.querySelectorAll('.chip.selected').forEach(c => c.classList.remove('selected'));
     atualizarContagem();
+    if (onChange) onChange(getSelectedArr(), getAreaTotal());
   });
 
   atualizarContagem();
 
   return {
     el: wrapper,
-    getSelected: () => Array.from(sel).sort((a,b) => Number(a) - Number(b)),
+    getSelected: getSelectedArr,
+    getAreaTotal: getAreaTotal,
     setSelected: (codigos) => {
       sel.clear();
       picker.querySelectorAll('.chip.selected').forEach(c => c.classList.remove('selected'));
@@ -183,6 +196,7 @@ export function lojasPicker({ lojasStatus, selecionadas = [], permitirOcupadas =
         if (chip && !chip.classList.contains('interna')) chip.classList.add('selected');
       });
       atualizarContagem();
+      if (onChange) onChange(getSelectedArr(), getAreaTotal());
     }
   };
 }

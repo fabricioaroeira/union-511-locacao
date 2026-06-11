@@ -145,8 +145,8 @@ export async function abrirFormLead(id = null) {
             cliente_nome: dados.cliente_nome,
             ramo: dados.ramo_atividade,
             corretor: dados.corretor,
-            lojas: dados.lojas || [],
-            observacoes: 'Convertido do Lead iniciado em ' + (dados.data_inicio || '?') + '. ' + (dados.observacoes || '')
+            lojas: dados.lojas || []
+            // Observações do lead NÃO vão pra proposta — ficam no painel "Contexto do lead"
           }
         });
       });

@@ -1,9 +1,9 @@
 // =====================================================================
 // Formulário de criar/editar proposta
 // =====================================================================
-import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta } from './data-layer.js';
+import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta, getLead } from './data-layer.js';
 import { abrirModal, campo, lojasPicker } from './modal.js';
-import { el } from './utils.js';
+import { el, REF_RSM } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { extrairPropostaDoPDF } from './claude.js';
 
@@ -17,6 +17,38 @@ export async function abrirFormProposta(id = null, opts = {}) {
 
   const lojasStatus = await getLojasStatus();
   const body = el('div');
+
+  // Painel "Contexto do lead" — só quando vem de conversão lead→proposta
+  if (opts && opts.fromLead) {
+    try {
+      const leadCtx = await getLead(opts.fromLead);
+      if (leadCtx) {
+        const painelLead = el('div');
+        painelLead.style.cssText = 'background:#eff6ff;border-left:4px solid #2563eb;padding:14px 16px;border-radius:6px;margin-bottom:18px;font-size:13px';
+        const dias = leadCtx.created_at
+          ? Math.floor((Date.now() - new Date(leadCtx.created_at)) / 86400000)
+          : null;
+        const ultDias = leadCtx.ultima_interacao_data
+          ? Math.floor((Date.now() - new Date(leadCtx.ultima_interacao_data)) / 86400000)
+          : null;
+        const tempoStr = ultDias === null ? '—' : ultDias === 0 ? 'hoje' : ultDias === 1 ? 'há 1 dia' : ('há ' + ultDias + ' dias');
+        const notas = leadCtx.observacoes
+          ? '<div style="margin-top:8px;padding:8px 10px;background:#fff;border-radius:4px;font-size:12px;color:var(--ink);white-space:pre-wrap;max-height:120px;overflow:auto"><strong style="color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;display:block;margin-bottom:4px">Notas internas do lead</strong>' + leadCtx.observacoes + '</div>'
+          : '';
+        painelLead.innerHTML =
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:16px">📋</span><strong style="color:#1e40af">Originado do Lead — ' + (leadCtx.cliente_nome || '?') + '</strong></div>' +
+          '<div style="color:#475569;font-size:12px">' +
+            (dias !== null ? 'Em pipeline há ' + dias + ' dias' : '') +
+            (leadCtx.corretor ? ' · Corretor: <strong>' + leadCtx.corretor + '</strong>' : '') +
+            ' · Última interação: <strong>' + tempoStr + '</strong>' +
+            ' · ' + (leadCtx.qtd_interacoes || 0) + ' interação(ões)' +
+          '</div>' +
+          notas +
+          '<div style="margin-top:8px;font-size:11px;color:#64748b;font-style:italic">As notas do lead ficam apenas aqui — não vão para a proposta. Preencha os campos abaixo com o que o cliente realmente propôs.</div>';
+        body.appendChild(painelLead);
+      }
+    } catch (e) { console.warn('Não foi possível carregar contexto do lead:', e); }
+  }
 
   // Cliente e ramo
   const sec1 = el('div', { className: 'form-section' });
@@ -43,7 +75,18 @@ export async function abrirFormProposta(id = null, opts = {}) {
   // Lojas
   const sec2 = el('div', { className:'form-section' });
   sec2.appendChild(el('div', { className:'form-section-title' }, 'Lojas envolvidas'));
-  const picker = lojasPicker({ lojasStatus, selecionadas: dados.lojas || [], permitirOcupadas: false });
+  const picker = lojasPicker({
+    lojasStatus,
+    selecionadas: dados.lojas || [],
+    permitirOcupadas: false,
+    onChange: function(lojasSel, areaTotal) {
+      const inpArea = body.querySelector('[name="area_total"]');
+      if (inpArea && !inpArea.dataset.userEdited && areaTotal > 0) {
+        inpArea.value = areaTotal;
+      }
+      atualizarRsM2();
+    }
+  });
   sec2.appendChild(picker.el);
   body.appendChild(sec2);
 
@@ -51,7 +94,13 @@ export async function abrirFormProposta(id = null, opts = {}) {
   const sec3 = el('div', { className:'form-section' });
   sec3.appendChild(el('div', { className:'form-section-title' }, 'Termos comerciais'));
   const grid3 = el('div', { className:'form-grid cols-3' });
-  grid3.appendChild(campo({ name:'area_total', label:'Área total (m²)', type:'number', value:dados.area_total, hint:'Necessária para calcular R$/m²' }));
+  // Área: usa o que veio em dados, senão calcula das lojas selecionadas
+  let areaInicial = dados.area_total;
+  if (!areaInicial && picker.getAreaTotal) {
+    const a = picker.getAreaTotal();
+    if (a > 0) areaInicial = a;
+  }
+  grid3.appendChild(campo({ name:'area_total', label:'Área total (m²)', type:'number', value: areaInicial || '', hint:'Calculado das lojas selecionadas. Edite se a proposta usar área diferente.' }));
   grid3.appendChild(campo({ name:'valor_aluguel', label:'Aluguel mensal (R$)', type:'number', value:dados.valor_aluguel, required:true }));
   grid3.appendChild(campo({ name:'meses_carencia', label:'Carência (meses)', type:'number', value:dados.meses_carencia ?? 4 }));
   grid3.appendChild(campo({ name:'prazo_opcoes', label:'Prazo', type:'text', value:dados.prazo_opcoes || '5 anos', hint:'Ex: "5 anos" ou "3 ou 5 anos (a definir)"' }));
@@ -70,10 +119,58 @@ export async function abrirFormProposta(id = null, opts = {}) {
   sec3.appendChild(grid3);
   body.appendChild(sec3);
 
+  // Indicador R$/m² ao vivo
+  const rsm2Box = el('div');
+  rsm2Box.style.cssText = 'margin:-6px 0 18px;padding:10px 14px;background:#f8fafc;border:1px solid var(--line);border-radius:6px;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+  rsm2Box.innerHTML = '<span style="color:var(--ink-soft);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">R$/m²</span>' +
+    '<span data-rsm2-valor style="font-weight:700;font-size:18px;color:var(--ink-soft)">—</span>' +
+    '<span data-rsm2-badge></span>' +
+    '<span style="margin-left:auto;font-size:11px;color:var(--ink-soft)">Refs: conservador R$ 152 · médio R$ 176 · âncora R$ 193</span>';
+  body.appendChild(rsm2Box);
+
+  function atualizarRsM2() {
+    const inpArea = body.querySelector('[name="area_total"]');
+    const inpVal = body.querySelector('[name="valor_aluguel"]');
+    const a = Number((inpArea && inpArea.value) || 0);
+    const v = Number((inpVal && inpVal.value) || 0);
+    const valorEl = rsm2Box.querySelector('[data-rsm2-valor]');
+    const badgeEl = rsm2Box.querySelector('[data-rsm2-badge]');
+    if (!a || !v) {
+      valorEl.textContent = '—';
+      valorEl.style.color = 'var(--ink-soft)';
+      badgeEl.innerHTML = '';
+      return;
+    }
+    const rsm2 = v / a;
+    valorEl.textContent = 'R$ ' + rsm2.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let label, bg, color;
+    if (rsm2 >= REF_RSM.medio) {
+      label = '✓ Dentro do médio (R$ ' + REF_RSM.medio.toFixed(0) + ')';
+      bg = '#dcfce7'; color = '#15803d';
+    } else if (rsm2 >= REF_RSM.conservador) {
+      label = '⚠ Abaixo do médio, acima do conservador';
+      bg = '#fef9c3'; color = '#a16207';
+    } else {
+      label = '⚠ Abaixo do conservador (R$ ' + REF_RSM.conservador.toFixed(0) + ')';
+      bg = '#fee2e2'; color = '#b91c1c';
+    }
+    valorEl.style.color = color;
+    badgeEl.innerHTML = '<span style="background:' + bg + ';color:' + color + ';padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600">' + label + '</span>';
+  }
+
   // Observações
   const sec4 = el('div', { className:'form-section' });
-  sec4.appendChild(campo({ name:'observacoes', label:'Observações', type:'textarea', value:dados.observacoes, full:true, rows:3 }));
+  sec4.appendChild(campo({ name:'observacoes', label:'Observações da proposta', type:'textarea', value:dados.observacoes, full:true, rows:3, hint:'Apenas o que o cliente formalizou na proposta. Anotações internas do lead ficam no próprio lead.' }));
   body.appendChild(sec4);
+
+  // Listeners pra recalcular R$/m² em tempo real
+  setTimeout(function() {
+    const inpArea = body.querySelector('[name="area_total"]');
+    const inpVal = body.querySelector('[name="valor_aluguel"]');
+    if (inpArea) inpArea.addEventListener('input', function() { inpArea.dataset.userEdited = '1'; atualizarRsM2(); });
+    if (inpVal) inpVal.addEventListener('input', atualizarRsM2);
+    atualizarRsM2();
+  }, 50);
 
   // Upload OPCIONAL de proposta em PDF — Claude lê e preenche (somente em propostas NOVAS)
   if (!id) {
