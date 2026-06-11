@@ -147,11 +147,20 @@
 <div class="panel" id="propostas">
   <div class="card">
     <div class="card-head">
-      <h2>Propostas ativas — pendentes de decisão ou documentação</h2>
+      <h2 id="propostas-titulo">Propostas ativas — pendentes de decisão ou documentação</h2>
       <button class="btn" id="btn-nova-proposta">+ Nova proposta</button>
     </div>
     <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
-      Cada card representa uma proposta em pipeline. Referências de R$/m²: portfólio R$ 176 (médio ponderado) · conservador R$ 152 · âncora Pague Menos R$ 193.
+      Cada card representa uma proposta. Referências de R$/m²: portfólio R$ 176 (médio ponderado) · conservador R$ 152 · âncora Pague Menos R$ 193.
+    </div>
+    <div class="financeiro-subtabs" id="propostas-filtros" style="margin-bottom:14px">
+      <button class="fin-subtab active" data-prop-filtro="ativas">Ativas <span id="cnt-prop-ativas"></span></button>
+      <button class="fin-subtab" data-prop-filtro="aceita_aguardando_docs">Aceitas <span id="cnt-prop-aceitas"></span></button>
+      <button class="fin-subtab" data-prop-filtro="em_analise">Em análise <span id="cnt-prop-analise"></span></button>
+      <button class="fin-subtab" data-prop-filtro="recusada">Recusadas <span id="cnt-prop-recusadas"></span></button>
+      <button class="fin-subtab" data-prop-filtro="expirada">Expiradas <span id="cnt-prop-expiradas"></span></button>
+      <button class="fin-subtab" data-prop-filtro="convertida_em_contrato">Convertidas <span id="cnt-prop-convertidas"></span></button>
+      <button class="fin-subtab" data-prop-filtro="all">Todas <span id="cnt-prop-todas"></span></button>
     </div>
     <div id="propostas-resumo" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px"></div>
     <div id="propostas-list"></div>
@@ -383,6 +392,17 @@ document.getElementById('btn-novo-inquilino').addEventListener('click', () => ab
 document.getElementById('btn-editar-areas').addEventListener('click', () => abrirFormAreasLojas());
 document.getElementById('btn-novo-lead').addEventListener('click', () => abrirFormLead());
 document.getElementById('btn-nova-proposta').addEventListener('click', () => abrirFormProposta());
+
+// 5.6 Filtros da aba Propostas
+document.querySelectorAll('[data-prop-filtro]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('[data-prop-filtro]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    window._propostasFiltro = btn.dataset.propFiltro;
+    const { renderTudo } = await import('./js/render.js');
+    await renderTudo();
+  });
+});
 
 // 5.5 Mapa em tela cheia (clona o conteúdo do grid normal)
 document.getElementById('btn-mapa-fullscreen').addEventListener('click', () => {

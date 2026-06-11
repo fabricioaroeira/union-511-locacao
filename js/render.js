@@ -28,10 +28,14 @@ export function mostrarToast(msg, tipo = 'success') {
 // Renderização completa do dashboard
 // ---------------------------------------------------------------------
 export async function renderTudo() {
-  const [kpis, lojas, inquilinos, contratos, propostas, leads] = await Promise.all([
-    getKPIs(), getLojasStatus(), getInquilinos(), getContratos('ativo'), getPropostas('ativas'),
+  const filtroProp = window._propostasFiltro || 'ativas';
+  const [kpis, lojas, inquilinos, contratos, propostasAtivas, propostasFiltro, leads] = await Promise.all([
+    getKPIs(), getLojasStatus(), getInquilinos(), getContratos('ativo'),
+    getPropostas('ativas'),  // pra mapa, KPIs e legenda
+    getPropostas(filtroProp), // pra aba propostas
     getLeads('todos').catch(() => [])
   ]);
+  const propostas = propostasAtivas; // alias pra renders que usam propostas ativas
   const safe = (fn, nome) => { try { return fn(); } catch (e) { console.error('render error em ' + nome + ':', e); } };
   safe(() => renderBannerAlertas(contratos, propostas, leads), 'renderBannerAlertas');
   safe(() => renderKpis(kpis), 'renderKpis');
@@ -43,7 +47,7 @@ export async function renderTudo() {
   try { await renderTabelaOcupadas(contratos, lojas); } catch (e) { console.error('render err renderTabelaOcupadas:', e); }
   safe(() => renderTabelaDisponiveis(lojas, propostas), 'renderTabelaDisponiveis');
   safe(() => renderInquilinosCards(inquilinos, contratos), 'renderInquilinosCards');
-  safe(() => renderPropostas(propostas), 'renderPropostas');
+  safe(() => renderPropostas(propostasFiltro, filtroProp, propostasAtivas), 'renderPropostas');
   safe(() => renderLeads(leads), 'renderLeads');
   safe(() => renderTimeline(contratos), 'renderTimeline');
   safe(() => renderTabelaVencimentos(contratos), 'renderTabelaVencimentos');
@@ -403,17 +407,31 @@ function renderInquilinosCards(inquilinos, contratos) {
 // ---------------------------------------------------------------------
 // Propostas
 // ---------------------------------------------------------------------
-function renderPropostas(propostas) {
+function renderPropostas(propostas, filtroAtual = 'ativas', propostasAtivas = []) {
   const resumoBox = document.getElementById('propostas-resumo');
+
+  // Atualiza título conforme o filtro
+  const titulos = {
+    ativas: 'Propostas ativas — pendentes de decisão ou documentação',
+    aceita_aguardando_docs: 'Propostas aceitas — aguardando documentação',
+    em_analise: 'Propostas em análise',
+    recusada: 'Propostas recusadas',
+    expirada: 'Propostas expiradas',
+    convertida_em_contrato: 'Propostas convertidas em contrato',
+    all: 'Todas as propostas (histórico completo)'
+  };
+  const tituloEl = document.getElementById('propostas-titulo');
+  if (tituloEl) tituloEl.textContent = titulos[filtroAtual] || titulos.ativas;
+
   const qtdAceitas = propostas.filter(p => p.status === 'aceita_aguardando_docs').length;
   const qtdAnalise = propostas.filter(p => p.status === 'em_analise').length;
   const lojasEmProposta = propostas.reduce((s,p) => s + (p.lojas?.length || 0), 0);
   const receitaPot = propostas.reduce((s,p) => s + Number(p.valor_aluguel), 0);
 
   const cards = [
-    { label:'Propostas ativas', valor:propostas.length, sub:`${qtdAceitas} aceita(s) · ${qtdAnalise} em análise`, cor:'var(--ink)' },
+    { label: filtroAtual === 'ativas' ? 'Propostas ativas' : 'Quantidade exibida', valor:propostas.length, sub: filtroAtual === 'ativas' ? `${qtdAceitas} aceita(s) · ${qtdAnalise} em análise` : titulos[filtroAtual] || filtroAtual, cor:'var(--ink)' },
     { label:'Lojas em pipeline', valor:lojasEmProposta, sub:'do total disponível', cor:'var(--accent)' },
-    { label:'Receita potencial', valor:formatMoneyShort(receitaPot), sub:'/mês se fechar tudo', cor:'var(--green)' },
+    { label:'Receita potencial', valor:formatMoneyShort(receitaPot), sub:'/mês', cor:'var(--green)' },
     { label:'Próxima ação', valor:qtdAceitas > 0 ? 'Aguardar docs' : (qtdAnalise > 0 ? 'Analisar' : '—'), sub:'pendente', cor:'var(--amber)' }
   ];
   resumoBox.innerHTML = cards.map(c => `
