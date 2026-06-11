@@ -519,3 +519,7 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
       btnSalvar.disabled = false;
       btnSalvar.textContent = doc ? 'Salvar alterações' : 'Adicionar documento';
     }
+  });
+
+  return box;
+}
