@@ -151,7 +151,7 @@ function renderLegenda(k, propostas) {
   const pAnalise = propostas.filter(p => p.status === 'em_analise').reduce((s,p)=>s+(p.lojas?.length||0),0);
   const livres = disp - pAceitas - pAnalise;
   document.getElementById('legend').innerHTML = `
-    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Ocupada (${k.lojas_ocupadas})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Ocupada (${k.lojas_ocupadas})</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--violet)"></div>Parcial</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Proposta aceita (${pAceitas})</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>Proposta em análise (${pAnalise})</div>
@@ -823,7 +823,6 @@ function renderLeads(leads) {
       <div class="proposta-grid" style="grid-template-columns:repeat(4,1fr)">
         <div class="proposta-cell"><div class="proposta-cell-label">Lojas de interesse</div><div class="proposta-cell-value" style="font-size:13px">${lojasStr}</div></div>
         <div class="proposta-cell"><div class="proposta-cell-label">Corretor</div><div class="proposta-cell-value" style="font-size:13px">${l.corretor || '—'}</div></div>
-        <div class="proposta-cell"><div class="proposta-cell-label">Início do estudo</div><div class="proposta-cell-value" style="font-size:13px">${fmtBR(l.data_inicio)}</div></div>
         <div class="proposta-cell"><div class="proposta-cell-label">Última atualização</div><div class="proposta-cell-value" style="font-size:13px">${tempoStr}</div></div>
       </div>
       ${l.observacoes ? `<div style="padding:10px 12px;background:#f8fafc;border-radius:6px;font-size:13px;color:var(--ink-soft);margin-top:10px"><strong>Notas:</strong> ${l.observacoes}</div>` : ''}

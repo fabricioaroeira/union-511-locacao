@@ -81,8 +81,8 @@ export function renderPlanta(lojas, contratos, propostas) {
       cor = 'rgba(30,41,59,0.55)'; stroke = '#1e293b'; labelExtra = ' (uso interno)';
     } else if (l.status === 'ocupada') {
       const c = contratosByLoja[cod];
-      cor = c?.parcial ? 'rgba(139,92,246,0.45)' : 'rgba(22,163,74,0.40)';
-      stroke = c?.parcial ? '#7c3aed' : '#16a34a';
+      cor = c?.parcial ? 'rgba(139,92,246,0.45)' : 'rgba(220,38,38,0.45)';
+      stroke = c?.parcial ? '#7c3aed' : '#dc2626';
       labelExtra = c ? ` · ${l.inquilino_atual || ''} · ${formatMoney(c.valor_aluguel)}/mês` : '';
     } else if (l.status === 'proposta_aceita') {
       cor = 'rgba(37,99,235,0.40)'; stroke = '#2563eb';
