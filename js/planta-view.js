@@ -85,11 +85,11 @@ export function renderPlanta(lojas, contratos, propostas) {
       stroke = c?.parcial ? '#7c3aed' : '#dc2626';
       labelExtra = c ? ` · ${l.inquilino_atual || ''} · ${formatMoney(c.valor_aluguel)}/mês` : '';
     } else if (l.status === 'proposta_aceita') {
-      cor = 'rgba(37,99,235,0.40)'; stroke = '#2563eb';
+      cor = 'rgba(30,58,138,0.55)'; stroke = '#1e3a8a';
       const p = propostaByLoja[cod];
       labelExtra = p ? ` · ${p.cliente_nome} (proposta aceita)` : '';
     } else if (l.status === 'proposta_analise') {
-      cor = 'rgba(217,119,6,0.42)'; stroke = '#d97706';
+      cor = 'rgba(125,211,252,0.55)'; stroke = '#0ea5e9';
       const p = propostaByLoja[cod];
       labelExtra = p ? ` · ${p.cliente_nome} (em análise)` : '';
     }

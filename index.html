@@ -132,11 +132,20 @@
 <div class="panel" id="leads">
   <div class="card">
     <div class="card-head">
-      <h2>Leads em estudo — clientes acompanhando, antes da proposta formal</h2>
+      <h2 id="leads-titulo">Leads ativos — clientes acompanhando, antes da proposta formal</h2>
       <button class="btn" id="btn-novo-lead">+ Novo lead</button>
     </div>
     <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
       Acompanhe clientes que demonstraram interesse mas ainda não fizeram proposta. Quando o cliente decidir formalizar, use o botão "Converter em proposta" no lead.
+    </div>
+    <div class="financeiro-subtabs" id="leads-filtros" style="margin-bottom:14px">
+      <button class="fin-subtab active" data-lead-filtro="ativos">Ativos <span id="cnt-lead-ativos"></span></button>
+      <button class="fin-subtab" data-lead-filtro="interessado">Interessados <span id="cnt-lead-interessado"></span></button>
+      <button class="fin-subtab" data-lead-filtro="visitou">Visitaram <span id="cnt-lead-visitou"></span></button>
+      <button class="fin-subtab" data-lead-filtro="em_analise">Em análise <span id="cnt-lead-analise"></span></button>
+      <button class="fin-subtab" data-lead-filtro="virou_proposta">Viraram proposta <span id="cnt-lead-virou"></span></button>
+      <button class="fin-subtab" data-lead-filtro="desistiu">Desistiram <span id="cnt-lead-desistiu"></span></button>
+      <button class="fin-subtab" data-lead-filtro="all">Todos <span id="cnt-lead-todos"></span></button>
     </div>
     <div id="leads-resumo" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px"></div>
     <div id="leads-list"></div>
@@ -399,6 +408,17 @@ document.querySelectorAll('[data-prop-filtro]').forEach(btn => {
     document.querySelectorAll('[data-prop-filtro]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     window._propostasFiltro = btn.dataset.propFiltro;
+    const { renderTudo } = await import('./js/render.js');
+    await renderTudo();
+  });
+});
+
+// 5.7 Filtros da aba Leads
+document.querySelectorAll('[data-lead-filtro]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('[data-lead-filtro]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    window._leadsFiltro = btn.dataset.leadFiltro;
     const { renderTudo } = await import('./js/render.js');
     await renderTudo();
   });

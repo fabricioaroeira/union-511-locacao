@@ -153,8 +153,8 @@ function renderLegenda(k, propostas) {
   document.getElementById('legend').innerHTML = `
     <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Ocupada (${k.lojas_ocupadas})</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--violet)"></div>Parcial</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Proposta aceita (${pAceitas})</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>Proposta em análise (${pAnalise})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1e3a8a"></div>Proposta aceita (${pAceitas})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div>Proposta em análise (${pAnalise})</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Disponível (${livres})</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1a2332"></div>Uso interno (${k.lojas_internas})</div>
   `;
@@ -762,13 +762,44 @@ function renderLeads(leads) {
   const resumoBox = document.getElementById('leads-resumo');
   if (!resumoBox) return;
 
-  // Contadores por status
-  const ativos = leads.filter(l => ['interessado','visitou','em_analise'].includes(l.status));
+  const filtroAtual = window._leadsFiltro || 'ativos';
+
+  // Contadores por status (sobre o universo todo)
+  const ativosArr = leads.filter(l => ['interessado','visitou','em_analise'].includes(l.status));
   const interessados = leads.filter(l => l.status === 'interessado').length;
   const visitou = leads.filter(l => l.status === 'visitou').length;
   const emAnalise = leads.filter(l => l.status === 'em_analise').length;
   const virouProp = leads.filter(l => l.status === 'virou_proposta').length;
   const desistiu = leads.filter(l => l.status === 'desistiu').length;
+
+  // Atualiza contadores nas sub-abas
+  const setCnt = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = `(${n})`; };
+  setCnt('cnt-lead-ativos', ativosArr.length);
+  setCnt('cnt-lead-interessado', interessados);
+  setCnt('cnt-lead-visitou', visitou);
+  setCnt('cnt-lead-analise', emAnalise);
+  setCnt('cnt-lead-virou', virouProp);
+  setCnt('cnt-lead-desistiu', desistiu);
+  setCnt('cnt-lead-todos', leads.length);
+
+  // Atualiza título da seção conforme filtro
+  const titulos = {
+    ativos: 'Leads ativos — clientes acompanhando, antes da proposta formal',
+    interessado: 'Leads interessados',
+    visitou: 'Leads que já visitaram',
+    em_analise: 'Leads em análise',
+    virou_proposta: 'Leads que viraram proposta',
+    desistiu: 'Leads que desistiram',
+    all: 'Todos os leads'
+  };
+  const tituloEl = document.getElementById('leads-titulo');
+  if (tituloEl) tituloEl.textContent = titulos[filtroAtual] || titulos.ativos;
+
+  // Aplica filtro
+  let leadsFiltro;
+  if (filtroAtual === 'ativos') leadsFiltro = ativosArr;
+  else if (filtroAtual === 'all') leadsFiltro = leads;
+  else leadsFiltro = leads.filter(l => l.status === filtroAtual);
 
   const cards = [
     { label: 'Interessados', valor: interessados, cor: STATUS_LEAD_LABELS.interessado.cor },
@@ -787,12 +818,15 @@ function renderLeads(leads) {
   const lista = document.getElementById('leads-list');
   if (!lista) return;
 
-  if (leads.length === 0) {
-    lista.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum lead registrado ainda. Clique em <strong>+ Novo lead</strong> para começar.</div>';
+  if (leadsFiltro.length === 0) {
+    const msgVazio = leads.length === 0
+      ? 'Nenhum lead registrado ainda. Clique em <strong>+ Novo lead</strong> para começar.'
+      : `Nenhum lead em "<strong>${(titulos[filtroAtual] || filtroAtual).replace(/^Leads? ?/, '')}</strong>".`;
+    lista.innerHTML = `<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">${msgVazio}</div>`;
     return;
   }
 
-  const ordenados = [...leads].sort((a, b) => {
+  const ordenados = [...leadsFiltro].sort((a, b) => {
     const aAtivo = ['interessado','visitou','em_analise'].includes(a.status) ? 0 : 1;
     const bAtivo = ['interessado','visitou','em_analise'].includes(b.status) ? 0 : 1;
     if (aAtivo !== bAtivo) return aAtivo - bAtivo;
@@ -820,7 +854,6 @@ function renderLeads(leads) {
         </div>
         <span class="badge" style="background:${statusInfo.bg};color:${statusInfo.cor};font-weight:600">${statusInfo.label}</span>
       </div>
-      <div class="proposta-grid" style="grid-template-columns:repeat(4,1fr)">
         <div class="proposta-cell"><div class="proposta-cell-label">Lojas de interesse</div><div class="proposta-cell-value" style="font-size:13px">${lojasStr}</div></div>
         <div class="proposta-cell"><div class="proposta-cell-label">Corretor</div><div class="proposta-cell-value" style="font-size:13px">${l.corretor || '—'}</div></div>
         <div class="proposta-cell"><div class="proposta-cell-label">Última atualização</div><div class="proposta-cell-value" style="font-size:13px">${tempoStr}</div></div>
