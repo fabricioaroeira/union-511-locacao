@@ -6,7 +6,7 @@ import { getContrato, saveContrato, getInquilinos, getLojasStatus, getProposta, 
 import { abrirModal, campo, lojasPicker } from './modal.js';
 import { el, fmtBR, parseBR } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
-import { extrairContratoDoPDF } from './claude.js';
+import { extrairContratoDoPDF, extrairDocumentoDoPDF } from './claude.js';
 
 export async function abrirFormContrato(id = null, opts = {}) {
   let dados = {};
@@ -414,6 +414,64 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
   const tit = el('div', { style: { fontWeight: '600', marginBottom: '10px' } }, doc ? 'Editar documento' : 'Novo documento');
   box.appendChild(tit);
 
+  // ===== Upload IA (só para criação nova, não edição) =====
+  if (!doc) {
+    const uploadBox = el('div');
+    uploadBox.style.cssText = 'border:2px dashed #cbd5e1;border-radius:6px;padding:14px;text-align:center;background:#fff;margin-bottom:12px;cursor:pointer';
+    const docInputId = 'doc_upload_' + Date.now();
+    uploadBox.innerHTML =
+      '<input type="file" id="' + docInputId + '" accept="application/pdf" style="display:none">' +
+      '<label for="' + docInputId + '" style="cursor:pointer;display:block">' +
+      '📎 <strong>Anexar PDF para auto-preencher com IA</strong><br>' +
+      '<span style="font-size:11px;color:var(--ink-soft)">Apólice de seguro, certidão, AVCB, alvará... O Claude lê e preenche os campos.</span>' +
+      '</label>';
+    box.appendChild(uploadBox);
+    const iaStatus = el('div', { style: { display: 'none', marginBottom: '12px', padding: '10px', borderRadius: '6px', fontSize: '12px' } });
+    box.appendChild(iaStatus);
+
+    // Listener depois do appendChild
+    setTimeout(() => {
+      const inp = document.getElementById(docInputId);
+      if (!inp) return;
+      inp.addEventListener('change', async () => {
+        const f = inp.files?.[0];
+        if (!f) return;
+        uploadBox.style.borderColor = 'var(--green)';
+        uploadBox.querySelector('label').innerHTML = '✓ <strong>' + f.name + '</strong> · ' + (f.size/1024).toFixed(1) + ' KB';
+        iaStatus.style.display = 'block';
+        iaStatus.style.background = '#eff6ff';
+        iaStatus.style.color = '#1e40af';
+        iaStatus.style.border = '1px solid #bfdbfe';
+        iaStatus.innerHTML = '🤖 Claude está lendo o documento...';
+        try {
+          const ext = await extrairDocumentoDoPDF(f);
+          const setVal = (name, value) => {
+            if (value === null || value === undefined || value === '') return;
+            const el2 = box.querySelector('[name=' + name + ']');
+            if (el2) el2.value = value;
+          };
+          if (ext.tipo && TIPOS_DOCUMENTO[ext.tipo]) setVal('doc_tipo', ext.tipo);
+          setVal('doc_numero', ext.numero);
+          setVal('doc_descricao', ext.descricao);
+          setVal('doc_emissao', ext.data_emissao);
+          setVal('doc_validade', ext.data_validade);
+          const c = ext.confianca ?? '?';
+          iaStatus.style.background = '#ecfdf5';
+          iaStatus.style.color = '#065f46';
+          iaStatus.style.border = '1px solid #6ee7b7';
+          iaStatus.innerHTML = '✓ Campos preenchidos pelo Claude (confiança ' + c + '/100). Revise antes de salvar.';
+          mostrarToast('Documento lido com IA — revise os campos', 'success');
+        } catch (err) {
+          console.error('Erro extração documento:', err);
+          iaStatus.style.background = '#fef2f2';
+          iaStatus.style.color = '#991b1b';
+          iaStatus.style.border = '1px solid #fecaca';
+          iaStatus.innerHTML = '⚠️ Auto-preenchimento falhou: ' + err.message + '. Preencha manualmente.';
+        }
+      });
+    }, 50);
+  }
+
   const tipoOptions = Object.entries(TIPOS_DOCUMENTO).map(([v, l]) => ({ value: v, label: l }));
   const grid = el('div', { className: 'form-grid' });
   grid.appendChild(campo({ name: 'doc_tipo', label: 'Tipo', type: 'select', options: tipoOptions, value: doc?.tipo || 'seguro_fianca', required: true }));
@@ -461,7 +519,3 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
       btnSalvar.disabled = false;
       btnSalvar.textContent = doc ? 'Salvar alterações' : 'Adicionar documento';
     }
-  });
-
-  return box;
-}

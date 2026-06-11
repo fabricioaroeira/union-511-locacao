@@ -58,6 +58,28 @@ export async function extrairPropostaDoPDF(pdfFile) {
   return out.data;
 }
 
+// ===== Extrair dados de documento administrativo (PDF) =====
+// Aceita seguros, certidões, vistorias, AVCB, alvarás
+export async function extrairDocumentoDoPDF(pdfFile) {
+  if (!pdfFile) throw new Error('Arquivo PDF não fornecido');
+  if (pdfFile.type !== 'application/pdf') throw new Error('Arquivo precisa ser PDF');
+  const base64 = await arquivoParaBase64(pdfFile);
+  const headers = await authHeaders();
+  const r = await fetch(FUNCTION_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ mode: 'extract_document', pdf_base64: base64 })
+  });
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try { const j = await r.json(); msg = j.error || msg; } catch {}
+    throw new Error(`Falha na extração: ${msg}`);
+  }
+  const out = await r.json();
+  if (!out.ok) throw new Error(out.error || 'Resposta inválida do proxy');
+  return out.data;
+}
+
 // ===== Chat com Claude =====
 export async function chatComClaude(messages, dbContext = '') {
   const headers = await authHeaders();
