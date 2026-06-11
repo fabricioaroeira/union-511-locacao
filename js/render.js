@@ -764,7 +764,7 @@ function renderLeads(leads) {
 
   const filtroAtual = window._leadsFiltro || 'ativos';
 
-  // Contadores por status (sobre o universo todo)
+  // Contadores por status (universo todo)
   const ativosArr = leads.filter(l => ['interessado','visitou','em_analise'].includes(l.status));
   const interessados = leads.filter(l => l.status === 'interessado').length;
   const visitou = leads.filter(l => l.status === 'visitou').length;
@@ -772,8 +772,8 @@ function renderLeads(leads) {
   const virouProp = leads.filter(l => l.status === 'virou_proposta').length;
   const desistiu = leads.filter(l => l.status === 'desistiu').length;
 
-  // Atualiza contadores nas sub-abas
-  const setCnt = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = `(${n})`; };
+  // Atualiza contadores das sub-abas
+  const setCnt = (id, n) => { const e = document.getElementById(id); if (e) e.textContent = `(${n})`; };
   setCnt('cnt-lead-ativos', ativosArr.length);
   setCnt('cnt-lead-interessado', interessados);
   setCnt('cnt-lead-visitou', visitou);
@@ -782,9 +782,9 @@ function renderLeads(leads) {
   setCnt('cnt-lead-desistiu', desistiu);
   setCnt('cnt-lead-todos', leads.length);
 
-  // Atualiza título da seção conforme filtro
+  // Título dinâmico
   const titulos = {
-    ativos: 'Leads ativos — clientes acompanhando, antes da proposta formal',
+    ativos: 'Leads — clientes acompanhando, antes da proposta formal',
     interessado: 'Leads interessados',
     visitou: 'Leads que já visitaram',
     em_analise: 'Leads em análise',
@@ -801,6 +801,7 @@ function renderLeads(leads) {
   else if (filtroAtual === 'all') leadsFiltro = leads;
   else leadsFiltro = leads.filter(l => l.status === filtroAtual);
 
+  // Cards resumo (sempre sobre o universo todo)
   const cards = [
     { label: 'Interessados', valor: interessados, cor: STATUS_LEAD_LABELS.interessado.cor },
     { label: 'Visitaram', valor: visitou, cor: STATUS_LEAD_LABELS.visitou.cor },
@@ -834,43 +835,82 @@ function renderLeads(leads) {
   });
 
   lista.innerHTML = '';
+  lista.style.display = 'flex';
+  lista.style.flexDirection = 'column';
+  lista.style.gap = '6px';
+
   ordenados.forEach(l => {
     const statusInfo = STATUS_LEAD_LABELS[l.status] || STATUS_LEAD_LABELS.interessado;
     const lojasStr = l.lojas?.length > 0 ? l.lojas.join(', ') : '—';
-    const diasDesdeAtualizacao = l.ultima_interacao_data
+    const dias = l.ultima_interacao_data
       ? Math.floor((Date.now() - new Date(l.ultima_interacao_data)) / 86400000)
       : Math.floor((Date.now() - new Date(l.updated_at || l.created_at)) / 86400000);
-    const tempoStr = diasDesdeAtualizacao === 0 ? 'hoje'
-      : diasDesdeAtualizacao === 1 ? 'há 1 dia'
-      : `há ${diasDesdeAtualizacao} dias`;
+    const tempoStr = dias === 0 ? 'hoje' : dias === 1 ? 'há 1 dia' : `há ${dias} dias`;
+    const tempoAlerta = dias > 30;
+    const subTitulo = l.empresa ? ` — ${l.empresa}` : '';
+    const ramoStr = l.ramo_atividade || 'Ramo não informado';
 
-    const card = el('div', { className: 'proposta-card' });
-    card.style.borderLeft = `4px solid ${statusInfo.cor}`;
-    card.innerHTML = `
-      <div class="proposta-head">
-        <div>
-          <div class="proposta-titulo">${l.cliente_nome}${l.empresa ? ' — ' + l.empresa : ''}</div>
-          <div class="proposta-meta-top">${l.ramo_atividade || 'Ramo não informado'}</div>
-        </div>
-        <span class="badge" style="background:${statusInfo.bg};color:${statusInfo.cor};font-weight:600">${statusInfo.label}</span>
+    const row = el('div', { className: 'lead-row' });
+    row.style.cssText = 'display:grid;grid-template-columns:110px minmax(220px,1.6fr) 1fr 1fr 110px 70px 24px;align-items:center;gap:14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-left:4px solid ' + statusInfo.cor + ';border-radius:6px;cursor:pointer;font-size:13px';
+    row.onmouseover = () => row.style.background = '#f8fafc';
+    row.onmouseout = () => row.style.background = '#fff';
+
+    const corTempo = tempoAlerta ? '#dc2626' : 'var(--ink-soft)';
+    const pesoTempo = tempoAlerta ? '600' : '400';
+
+    row.innerHTML = `
+      <span class="badge" style="background:${statusInfo.bg};color:${statusInfo.cor};font-weight:600;font-size:11px;padding:3px 8px;white-space:nowrap;text-align:center">${statusInfo.label}</span>
+      <div style="overflow:hidden">
+        <div style="font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.cliente_nome}${subTitulo}</div>
+        <div style="font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ramoStr}</div>
       </div>
-        <div class="proposta-cell"><div class="proposta-cell-label">Lojas de interesse</div><div class="proposta-cell-value" style="font-size:13px">${lojasStr}</div></div>
-        <div class="proposta-cell"><div class="proposta-cell-label">Corretor</div><div class="proposta-cell-value" style="font-size:13px">${l.corretor || '—'}</div></div>
-        <div class="proposta-cell"><div class="proposta-cell-label">Última atualização</div><div class="proposta-cell-value" style="font-size:13px">${tempoStr}</div></div>
+      <div style="color:var(--ink-soft);overflow:hidden">
+        <div style="font-size:10px;text-transform:uppercase;color:#94a3b8;line-height:1.2">Lojas</div>
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lojasStr}</div>
       </div>
-      ${l.observacoes ? `<div style="padding:10px 12px;background:#f8fafc;border-radius:6px;font-size:13px;color:var(--ink-soft);margin-top:10px"><strong>Notas:</strong> ${l.observacoes}</div>` : ''}
-      ${l.motivo_desistencia ? `<div style="padding:10px 12px;background:#fef2f2;border-radius:6px;font-size:13px;color:#991b1b;margin-top:10px"><strong>Motivo de desistência:</strong> ${l.motivo_desistencia}</div>` : ''}
-      <div class="proposta-rodape" style="margin-top:12px">
-        <div style="font-size:12px;color:var(--ink-soft)">${l.qtd_interacoes || 0} interação(ões) registrada(s)</div>
-        <div class="proposta-acoes">
-          <button class="btn outline sm" data-edit-lead="${l.id}">✏️ Abrir / editar</button>
-        </div>
+      <div style="color:var(--ink-soft);overflow:hidden">
+        <div style="font-size:10px;text-transform:uppercase;color:#94a3b8;line-height:1.2">Corretor</div>
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.corretor || '—'}</div>
       </div>
+      <div style="white-space:nowrap">
+        <div style="font-size:10px;text-transform:uppercase;color:#94a3b8;line-height:1.2">Atualização</div>
+        <div style="color:${corTempo};font-weight:${pesoTempo}">${tempoStr}</div>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;text-align:center;line-height:1.2">${l.qtd_interacoes || 0}<br><span style="font-size:9px">inter.</span></div>
+      <div style="color:#94a3b8;text-align:center;font-size:14px" data-toggle-icon>▸</div>
     `;
-    lista.appendChild(card);
+
+    const expand = el('div', { className: 'lead-row-expand' });
+    expand.style.cssText = 'display:none;padding:14px 18px 14px 32px;background:#fafbfc;border:1px solid var(--line);border-top:none;border-left:4px solid ' + statusInfo.cor + ';border-radius:0 0 6px 6px;margin-top:-7px';
+    const partes = [];
+    if (l.observacoes) {
+      partes.push(`<div style="margin-bottom:10px;font-size:13px;color:var(--ink)"><div style="color:var(--ink-soft);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Notas</div>${l.observacoes}</div>`);
+    }
+    if (l.motivo_desistencia) {
+      partes.push(`<div style="padding:8px 12px;background:#fef2f2;border-radius:6px;font-size:13px;color:#991b1b;margin-bottom:10px"><strong>Motivo de desistência:</strong> ${l.motivo_desistencia}</div>`);
+    }
+    if (!l.observacoes && !l.motivo_desistencia) {
+      partes.push(`<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">Sem notas registradas.</div>`);
+    }
+    partes.push(`<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px"><button class="btn outline sm" data-edit-lead="${l.id}">✏️ Abrir / editar</button></div>`);
+    expand.innerHTML = partes.join('');
+
+    row.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-edit-lead]')) return;
+      const aberto = expand.style.display === 'block';
+      expand.style.display = aberto ? 'none' : 'block';
+      const icon = row.querySelector('[data-toggle-icon]');
+      if (icon) icon.textContent = aberto ? '▸' : '▾';
+    });
+
+    lista.appendChild(row);
+    lista.appendChild(expand);
   });
 
   lista.querySelectorAll('[data-edit-lead]').forEach(btn =>
-    btn.addEventListener('click', () => abrirFormLead(btn.dataset.editLead))
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      abrirFormLead(btn.dataset.editLead);
+    })
   );
 }
