@@ -152,7 +152,7 @@ function renderLegenda(k, propostas) {
   const livres = disp - pAceitas - pAnalise;
   document.getElementById('legend').innerHTML = `
     <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Ocupada (${k.lojas_ocupadas})</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--violet)"></div>Parcial</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#c2410c"></div>Parcial</div>
     <div class="legend-item"><div class="legend-dot" style="background:#1e3a8a"></div>Proposta aceita (${pAceitas})</div>
     <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div>Proposta em análise (${pAnalise})</div>
     <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Disponível (${livres})</div>
