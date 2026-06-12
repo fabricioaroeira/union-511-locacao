@@ -4,8 +4,7 @@
 import { chatComClaude } from './claude.js';
 import {
   getInquilinos, getContratos, getLojasStatus, getPropostas, getKPIs, getLeads,
-  getCobrancas, getInadimplencia, getDespesas, getDREMensal
-} from './data-layer.js';
+  getCobrancas, getInadimplencia, getDespesas, getDREMensal, getDocumentosTodos} from './data-layer.js';
 import { fmtBR, formatMoney, LABELS_GARANTIA, LABELS_STATUS_PROPOSTA } from './utils.js';
 
 const LABELS_STATUS_LEAD = {
@@ -426,6 +425,47 @@ async function gerarContextoDb() {
       const mes = new Date(m.mes).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
       linhas.push('- ' + mes + ' | Receita ' + formatMoney(m.receita_recebida) + ' - Despesa ' + formatMoney(m.despesa_paga) + ' = ' + formatMoney(m.resultado_caixa));
     });
+  }
+
+  // DOCUMENTOS (seguros, certidões, AVCB, alvarás)
+  if (typeof documentos !== 'undefined' && documentos && documentos.length > 0) {
+    linhas.push('');
+    linhas.push('## Documentos cadastrados (' + documentos.length + ' total)');
+    const hojeDoc = new Date();
+    hojeDoc.setHours(0,0,0,0);
+    const TIPOS_LBL = {
+      seguro_fianca: 'Seguro fianca',
+      seguro_incendio: 'Seguro incendio',
+      certidao_negativa_federal: 'Certidao federal',
+      certidao_negativa_municipal: 'Certidao municipal',
+      certidao_negativa_estadual: 'Certidao estadual',
+      certidao_trabalhista: 'Certidao trabalhista',
+      vistoria_inicial: 'Vistoria inicial',
+      vistoria_final: 'Vistoria final',
+      laudo_avcb: 'AVCB',
+      alvara_funcionamento: 'Alvara funcionamento',
+      outros: 'Outros'
+    };
+    documentos.slice(0, 80).forEach(d => {
+      const tipoLbl = TIPOS_LBL[d.tipo] || d.tipo;
+      const inq = d.inquilino_nome_fantasia || d.inquilino_razao_social || 'inquilino ?';
+      const val = d.data_validade ? new Date(d.data_validade) : null;
+      let status = '';
+      if (val) {
+        const dias = Math.floor((val - hojeDoc) / 86400000);
+        if (dias < 0) status = ' [VENCIDO ha ' + Math.abs(dias) + 'd]';
+        else if (dias <= 7) status = ' [VENCE EM ' + dias + 'd - CRITICO]';
+        else if (dias <= 30) status = ' [vence em ' + dias + 'd]';
+        else status = ' [OK +' + dias + 'd]';
+      }
+      const validadeStr = d.data_validade ? new Date(d.data_validade).toLocaleDateString('pt-BR') : '?';
+      const numero = d.numero ? ' n.' + d.numero : '';
+      linhas.push('- [' + inq + '] ' + tipoLbl + numero + ' | vence ' + validadeStr + status);
+    });
+  } else {
+    linhas.push('');
+    linhas.push('## Documentos cadastrados');
+    linhas.push('- Nenhum documento cadastrado ainda. Para cadastrar, edite um contrato e use a secao "Documentos do contrato".');
   }
 
   return linhas.join('\n');

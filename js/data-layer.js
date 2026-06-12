@@ -854,6 +854,23 @@ export async function getDocumentosByContrato(contratoId) {
   return data || [];
 }
 
+// Todos os documentos do portfólio com dados do inquilino (pra Chat IA, alertas, etc.)
+export async function getDocumentosTodos() {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('documentos_contrato')
+    .select('*, contratos(id, inquilino_id, inquilinos(razao_social, nome_fantasia))')
+    .order('data_validade');
+  if (error) throw new Error('Erro ao buscar documentos: ' + error.message);
+  return (data || []).map(d => {
+    var inq = (d.contratos && d.contratos.inquilinos) || {};
+    return Object.assign({}, d, {
+      inquilino_razao_social: inq.razao_social || null,
+      inquilino_nome_fantasia: inq.nome_fantasia || null
+    });
+  });
+}
+
 export async function saveDocumento(input) {
   if (MOCK_MODE) return input;
   const supa = await getSupabase();
