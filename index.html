@@ -201,6 +201,81 @@
 
 <!-- Vencimentos -->
 <div class="panel" id="vencimentos">
+
+  <!-- Legenda: regras de notificação automática -->
+  <div class="card" style="border-left:4px solid #2563eb">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="font-size:22px">🔔</span>
+      <h2 style="margin:0">Regras de notificação automática</h2>
+    </div>
+    <div class="sub" style="margin-bottom:16px;color:var(--ink-soft);font-size:13px">
+      O sistema gera alertas automáticos com base nos contratos, documentos cadastrados, leads e propostas. As regras abaixo definem quando cada tipo de alerta é disparado e com qual urgência.
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:16px">
+
+      <div style="padding:14px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <span style="font-size:16px">📄</span>
+          <strong style="color:#1e40af;font-size:13px;text-transform:uppercase;letter-spacing:0.05em">Contratual</strong>
+        </div>
+        <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:var(--ink)">
+          <li><strong>Renovação de contrato</strong> — aviso disparado <strong>180, 90, 60 e 30 dias</strong> antes do término.</li>
+          <li><strong>Reajuste anual</strong> — aviso <strong>30, 15 e 7 dias</strong> antes do aniversário do contrato.</li>
+          <li><strong>Marco de 5 anos</strong> — gatilho da <strong>ação renovatória</strong> (Lei 8.245/91).</li>
+        </ul>
+      </div>
+
+      <div style="padding:14px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <span style="font-size:16px">📋</span>
+          <strong style="color:#a16207;font-size:13px;text-transform:uppercase;letter-spacing:0.05em">Documental</strong>
+        </div>
+        <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:var(--ink)">
+          <li><strong>Seguros</strong> (fiança, incêndio) — aviso <strong>60, 30, 15 e 7 dias</strong> antes do vencimento da apólice.</li>
+          <li><strong>Certidões negativas</strong> (federal, municipal, estadual, trabalhista) — mesma régua. Vencidas há até 30d continuam aparecendo.</li>
+          <li><strong>AVCB</strong> e <strong>alvará</strong> de funcionamento — mesma régua.</li>
+          <li><strong>Vistorias</strong> (inicial / final) — alerta quando a validade se aproxima.</li>
+        </ul>
+        <div style="margin-top:8px;font-size:11px;color:var(--ink-soft);font-style:italic">Cadastre documentos editando cada contrato → seção &quot;Documentos do contrato&quot;.</div>
+      </div>
+
+      <div style="padding:14px;background:#f8fafc;border:1px solid var(--line);border-radius:8px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <span style="font-size:16px">💼</span>
+          <strong style="color:#15803d;font-size:13px;text-transform:uppercase;letter-spacing:0.05em">Comercial</strong>
+        </div>
+        <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:var(--ink)">
+          <li><strong>Lead parado</strong> — sem interação registrada há mais de <strong>30 dias</strong>. Após 60d vira urgência alta.</li>
+          <li><strong>Proposta aceita aguardando documentação</strong> — quando passa de <strong>7 dias</strong> sem fechar contrato.</li>
+          <li><strong>Proposta em análise parada</strong> — sem decisão do cliente há mais de <strong>14 dias</strong>.</li>
+        </ul>
+      </div>
+
+    </div>
+
+    <div style="padding:12px 14px;background:#fff;border:1px solid var(--line);border-radius:8px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-soft);font-weight:600;margin-bottom:8px">Régua de urgência</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <span style="background:#fee2e2;color:#b91c1c;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:600">🔴 Crítico</span>
+        <span style="font-size:12px;color:var(--ink-soft)">vencimento ≤ 7 dias (ou já vencido)</span>
+        <span style="margin:0 4px;color:#cbd5e1">·</span>
+        <span style="background:#ffedd5;color:#c2410c;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:600">🟠 Alto</span>
+        <span style="font-size:12px;color:var(--ink-soft)">≤ 30 dias</span>
+        <span style="margin:0 4px;color:#cbd5e1">·</span>
+        <span style="background:#fef9c3;color:#a16207;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:600">🟡 Médio</span>
+        <span style="font-size:12px;color:var(--ink-soft)">≤ 60–90 dias</span>
+        <span style="margin:0 4px;color:#cbd5e1">·</span>
+        <span style="background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:600">🟢 Baixo</span>
+        <span style="font-size:12px;color:var(--ink-soft)">monitoramento (180 dias)</span>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;font-size:11px;color:var(--ink-soft);font-style:italic">
+      Os alertas ficam disponíveis no Chat IA — pergunte &quot;tem seguro vencendo?&quot;, &quot;quem precisa renovar?&quot; — e em breve em sininho dedicado e e-mail diário às 8h.
+    </div>
+  </div>
+
   <div class="card">
     <h2>Linha do tempo de vencimentos contratuais</h2>
     <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
