@@ -2,8 +2,11 @@
 // RENDER — Toda a lógica de exibição do dashboard
 // =====================================================================
 import {
-  getKPIs, getLojasStatus, getInquilinos, getContratos, getPropostas, getArquivos, encerrarContrato, getLeads
+  getKPIs, getLojasStatus, getInquilinos, getContratos, getPropostas, getArquivos, encerrarContrato, getLeads,
+  getDocumentosByContrato, TIPOS_DOCUMENTO
 } from './data-layer.js';
+import { getArquivoUrl } from './upload.js';
+import { abrirModal } from './modal.js';
 import {
   formatMoney, formatMoneyShort, formatPercent, formatArea,
   fmtBR, parseBR, addMonths, mesesEntre, el,
@@ -268,12 +271,16 @@ async function renderTabelaOcupadas(contratos, lojas) {
   (lojas || []).forEach(l => { areaByCodigo[l.codigo] = l.area_privativa; });
 
   for (const c of sorted) {
-    const arquivos = await getArquivos('contrato', c.id);
+    const [arquivos, documentos] = await Promise.all([
+      getArquivos('contrato', c.id).catch(() => []),
+      getDocumentosByContrato(c.id).catch(() => [])
+    ]);
     const status = c.parcial ? '<span class="badge parcial">Parcial</span>' : '<span class="badge ocupada">Ocupada</span>';
     const termino = c.data_termino || fmtBR(addMonths(parseBR(c.data_inicio), c.prazo_meses));
-    const linksPdf = arquivos.map(a =>
-      `<a class="pdf-link" href="${a.storage_path}" target="_blank">${a.categoria === 'aditivo' ? 'aditivo' : 'contrato'}</a>`
-    ).join(' · ');
+    const totalDocs = (arquivos?.length || 0) + (documentos?.length || 0);
+    const btnDocs = totalDocs > 0
+      ? '<button class="btn outline sm" data-docs="' + c.id + '" style="font-size:11px;padding:3px 8px">📎 Documentos (' + totalDocs + ')</button>'
+      : '<span style="color:#94a3b8;font-size:11px">Sem documentos</span>';
     // soma de áreas privativas das lojas do contrato
     const areas = (c.lojas || []).map(cod => areaByCodigo[cod]).filter(Boolean);
     const areaTotalPriv = areas.reduce((s,a) => s + Number(a), 0);
@@ -300,7 +307,7 @@ async function renderTabelaOcupadas(contratos, lojas) {
       <td style="font-size:12px;color:var(--ink-soft)">${LABELS_GARANTIA[c.tipo_garantia]}${c.detalhes_garantia ? '<br>' + c.detalhes_garantia : ''}</td>
       <td style="font-size:12px">${c.data_inicio}<br><span style="color:var(--ink-soft)">→ ${termino}</span></td>
       <td>
-        ${linksPdf || '<span style="color:#94a3b8;font-size:11px">—</span>'}
+        ${btnDocs}
         <br>
         <button class="btn ghost sm" data-edit="${c.id}">✏️ editar</button>
         <button class="btn ghost sm" data-encerrar="${c.id}">🗑 encerrar</button>
@@ -316,6 +323,9 @@ async function renderTabelaOcupadas(contratos, lojas) {
   }
 
   // Listeners
+  tbl.querySelectorAll('[data-docs]').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalDocumentos(btn.dataset.docs));
+  });
   tbl.querySelectorAll('[data-edit]').forEach(btn => {
     btn.addEventListener('click', () => abrirFormContrato(btn.dataset.edit));
   });
@@ -913,4 +923,109 @@ function renderLeads(leads) {
       abrirFormLead(btn.dataset.editLead);
     })
   );
+}
+
+
+// =====================================================================
+// Modal "Documentos do contrato" — lista PDFs + documentos vinculados
+// =====================================================================
+async function abrirModalDocumentos(contratoId) {
+  const [arquivos, documentos] = await Promise.all([
+    getArquivos('contrato', contratoId).catch(() => []),
+    getDocumentosByContrato(contratoId).catch(() => [])
+  ]);
+
+  const body = el('div');
+
+  const renderItem = (icone, titulo, sub, badge, storage_path) => {
+    const row = el('div');
+    row.style.cssText = 'display:flex;gap:12px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px';
+    row.innerHTML =
+      '<span style="font-size:22px">' + icone + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:600;color:var(--ink);font-size:13px">' + titulo + '</div>' +
+        (sub ? '<div style="font-size:11px;color:var(--ink-soft)">' + sub + '</div>' : '') +
+      '</div>' +
+      (badge || '') +
+      '<button class="btn outline sm" data-baixar style="font-size:11px;padding:5px 10px;white-space:nowrap">📎 Baixar</button>';
+    row.querySelector('[data-baixar]').addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      b.disabled = true;
+      b.textContent = '...';
+      try {
+        const url = await getArquivoUrl(storage_path);
+        if (url) window.open(url, '_blank');
+        else mostrarToast('Arquivo não encontrado no Storage', 'error');
+      } catch (err) {
+        mostrarToast('Erro: ' + err.message, 'error');
+      } finally {
+        b.disabled = false;
+        b.textContent = '📎 Baixar';
+      }
+    });
+    return row;
+  };
+
+  // Seção 1: arquivos diretos do contrato (contrato assinado, aditivos)
+  if (arquivos && arquivos.length > 0) {
+    const tit = el('div', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', fontWeight: '600', margin: '0 0 8px' } }, 'Contrato e aditivos');
+    body.appendChild(tit);
+    arquivos.forEach(a => {
+      const titulo = a.categoria === 'aditivo' ? 'Aditivo' : (a.categoria === 'contrato_assinado' ? 'Contrato assinado' : (a.categoria || 'Arquivo'));
+      const sub = a.nome_original + ' · ' + (a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '');
+      body.appendChild(renderItem('📄', titulo, sub, '', a.storage_path));
+    });
+  }
+
+  // Seção 2: documentos da tabela documentos_contrato (seguros, certidões, AVCB)
+  if (documentos && documentos.length > 0) {
+    const tit = el('div', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', fontWeight: '600', margin: '14px 0 8px' } }, 'Seguros, certidões e demais documentos');
+    body.appendChild(tit);
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    documentos.forEach(d => {
+      const tipoLbl = (TIPOS_DOCUMENTO && TIPOS_DOCUMENTO[d.tipo]) || d.tipo;
+      const validade = d.data_validade ? new Date(d.data_validade).toLocaleDateString('pt-BR') : '?';
+      const numero = d.numero ? 'Nº ' + d.numero + ' · ' : '';
+      const sub = numero + 'vence ' + validade + (d.descricao ? ' · ' + d.descricao : '');
+      // badge de urgência
+      let badge = '';
+      if (d.data_validade) {
+        const dias = Math.floor((new Date(d.data_validade) - hoje) / 86400000);
+        let bg, color, lbl;
+        if (dias < 0) { bg='#fef2f2'; color='#7f1d1d'; lbl='vencido'; }
+        else if (dias <= 7) { bg='#fee2e2'; color='#b91c1c'; lbl=dias+'d'; }
+        else if (dias <= 30) { bg='#ffedd5'; color='#c2410c'; lbl=dias+'d'; }
+        else if (dias <= 60) { bg='#fef9c3'; color='#a16207'; lbl=dias+'d'; }
+        else { bg='#dcfce7'; color='#15803d'; lbl='OK'; }
+        badge = '<span style="background:' + bg + ';color:' + color + ';padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap;margin-right:8px">' + lbl + '</span>';
+      }
+      if (d.arquivo_url) {
+        body.appendChild(renderItem('📋', tipoLbl, sub, badge, d.arquivo_url));
+      } else {
+        // doc sem arquivo anexado
+        const row = el('div');
+        row.style.cssText = 'display:flex;gap:12px;align-items:center;padding:10px 12px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;margin-bottom:6px';
+        row.innerHTML =
+          '<span style="font-size:22px;opacity:0.5">📋</span>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-weight:600;color:var(--ink);font-size:13px">' + tipoLbl + '</div>' +
+            '<div style="font-size:11px;color:var(--ink-soft)">' + sub + '</div>' +
+          '</div>' +
+          badge +
+          '<span style="font-size:11px;color:#94a3b8;font-style:italic;white-space:nowrap">Sem arquivo</span>';
+        body.appendChild(row);
+      }
+    });
+  }
+
+  if ((!arquivos || arquivos.length === 0) && (!documentos || documentos.length === 0)) {
+    body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum documento cadastrado para este contrato ainda.<br><span style="font-size:12px">Use o botão ✏️ editar para adicionar.</span></div>';
+  }
+
+  abrirModal({
+    titulo: 'Documentos do contrato',
+    body,
+    submitLabel: 'Fechar',
+    onSubmit: async () => { /* só fecha */ }
+  });
 }
