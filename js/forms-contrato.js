@@ -572,7 +572,7 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
           const arquivo = await uploadArquivo(box._fileParaUpload, {
             entidade_tipo: 'documento',
             entidade_id: docSalvo.id,
-            categoria: 'doc_contrato'
+            categoria: 'outro'
           });
           if (arquivo?.storage_path) {
             await saveDocumento({ id: docSalvo.id, arquivo_url: arquivo.storage_path });
