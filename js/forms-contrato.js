@@ -447,14 +447,14 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
   const tit = el('div', { style: { fontWeight: '600', marginBottom: '10px' } }, doc ? 'Editar documento' : 'Novo documento');
   box.appendChild(tit);
 
-  // ===== Upload IA + anexo (em criação OU edição) =====
-  // Se editando e já tem arquivo, oferece visualizar
+  // ===== Painel de arquivo (sempre visível, em criação OU edição) =====
+  // Em edição: mostra arquivo atual com botão Visualizar, e permite substituir
   if (doc && doc.arquivo_url) {
     const linkVer = el('div');
-    linkVer.style.cssText = 'margin-bottom:10px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center';
-    linkVer.innerHTML = '<span>📎 Arquivo já anexado a este documento.</span>';
-    const btnVer = el('button', { type:'button' }, '👁 Visualizar');
-    btnVer.style.cssText = 'padding:4px 10px;border:1px solid #2563eb;background:#fff;color:#2563eb;border-radius:4px;cursor:pointer;font-size:11px';
+    linkVer.style.cssText = 'margin-bottom:10px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px';
+    linkVer.innerHTML = '<span>📎 <strong>Arquivo anexado.</strong> Substitua anexando um novo abaixo.</span>';
+    const btnVer = el('button', { type:'button' }, '👁 Visualizar atual');
+    btnVer.style.cssText = 'padding:4px 10px;border:1px solid #2563eb;background:#fff;color:#2563eb;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap';
     btnVer.addEventListener('click', async () => {
       try {
         const url = await getArquivoUrl(doc.arquivo_url);
@@ -467,15 +467,18 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
     box.appendChild(linkVer);
   }
 
-  if (!doc) {
+  // SEMPRE mostra a caixa de upload (em criação ou edição)
+  {
     const uploadBox = el('div');
     uploadBox.style.cssText = 'border:2px dashed #cbd5e1;border-radius:6px;padding:14px;text-align:center;background:#fff;margin-bottom:12px;cursor:pointer';
     const docInputId = 'doc_upload_' + Date.now();
     uploadBox.innerHTML =
-      '<input type="file" id="' + docInputId + '" accept="application/pdf" style="display:none">' +
+      '<input type="file" id="' + docInputId + '" accept="application/pdf,image/jpeg,image/png" style="display:none">' +
       '<label for="' + docInputId + '" style="cursor:pointer;display:block">' +
-      '📎 <strong>Anexar PDF do documento</strong><br>' +
-      '<span style="font-size:11px;color:var(--ink-soft)">Apolice, certidao, AVCB, alvara... O Claude le e preenche os campos, e o arquivo fica arquivado para download depois.</span>' +
+      (doc
+        ? '📎 <strong>Anexar/substituir arquivo</strong><br><span style="font-size:11px;color:var(--ink-soft)">PDF, JPG ou PNG. Sera salvo como arquivo deste documento.</span>'
+        : '📎 <strong>Anexar PDF do documento</strong><br><span style="font-size:11px;color:var(--ink-soft)">Apolice, certidao, AVCB, alvara... O Claude le e preenche os campos, e o arquivo fica arquivado para download depois.</span>'
+      ) +
       '</label>';
     box.appendChild(uploadBox);
     const iaStatus = el('div', { style: { display: 'none', marginBottom: '12px', padding: '10px', borderRadius: '6px', fontSize: '12px' } });
@@ -491,6 +494,15 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
         box._fileParaUpload = f; // GUARDA referência pra usar no submit
         uploadBox.style.borderColor = 'var(--green)';
         uploadBox.querySelector('label').innerHTML = '✓ <strong>' + f.name + '</strong> · ' + (f.size/1024).toFixed(1) + ' KB';
+        // Em modo edição NÃO chama auto-fill IA — só arquiva o arquivo
+        if (doc) {
+          iaStatus.style.display = 'block';
+          iaStatus.style.background = '#ecfdf5';
+          iaStatus.style.color = '#065f46';
+          iaStatus.style.border = '1px solid #6ee7b7';
+          iaStatus.innerHTML = '✓ Arquivo será anexado quando você salvar.';
+          return;
+        }
         iaStatus.style.display = 'block';
         iaStatus.style.background = '#eff6ff';
         iaStatus.style.color = '#1e40af';
