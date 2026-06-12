@@ -52,3 +52,13 @@ function sanitizarNomeArquivo(nome) {
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '');
 }
+
+// Gera URL temporária (válida por 1h) para visualizar/baixar um arquivo do Storage
+export async function getArquivoUrl(storage_path) {
+  if (!storage_path) return null;
+  if (MOCK_MODE) return storage_path;
+  const supa = await getSupabase();
+  const { data, error } = await supa.storage.from('arquivos').createSignedUrl(storage_path, 3600);
+  if (error) throw new Error('Nao foi possivel gerar URL do arquivo: ' + error.message);
+  return data && data.signedUrl ? data.signedUrl : null;
+}

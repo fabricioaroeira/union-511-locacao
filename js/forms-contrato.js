@@ -7,6 +7,7 @@ import { abrirModal, campo, lojasPicker } from './modal.js';
 import { el, fmtBR, parseBR } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { extrairContratoDoPDF, extrairDocumentoDoPDF } from './claude.js';
+import { uploadArquivo, getArquivoUrl } from './upload.js';
 
 export async function abrirFormContrato(id = null, opts = {}) {
   let dados = {};
@@ -404,9 +405,25 @@ function renderDocsList(docs, container, abrirEditar) {
       '<div>Vence: <strong>' + validadeStr + '</strong></div>' +
       '<div><span style="background:' + u.bg + ';color:' + u.cor + ';padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap">' + u.label + '</span></div>' +
       '<div style="display:flex;gap:4px;justify-content:flex-end">' +
+        (d.arquivo_url ? '<button type="button" class="btn ghost sm" data-baixar-doc title="Baixar arquivo anexado">📎</button>' : '') +
         '<button type="button" class="btn outline sm" data-edit-doc>✏️</button>' +
         '<button type="button" class="btn ghost sm" data-del-doc style="color:#dc2626">🗑️</button>' +
       '</div>';
+    const btnBaixar = row.querySelector('[data-baixar-doc]');
+    if (btnBaixar) {
+      btnBaixar.addEventListener('click', async () => {
+        btnBaixar.disabled = true;
+        try {
+          const url = await getArquivoUrl(d.arquivo_url);
+          if (url) window.open(url, '_blank');
+          else mostrarToast('Arquivo nao encontrado no storage', 'error');
+        } catch (err) {
+          mostrarToast('Erro ao gerar URL: ' + err.message, 'error');
+        } finally {
+          btnBaixar.disabled = false;
+        }
+      });
+    }
     row.querySelector('[data-edit-doc]').addEventListener('click', () => abrirEditar(d));
     row.querySelector('[data-del-doc]').addEventListener('click', async () => {
       if (!confirm('Excluir o documento "' + (TIPOS_DOCUMENTO[d.tipo] || d.tipo) + '"?')) return;
@@ -430,7 +447,26 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
   const tit = el('div', { style: { fontWeight: '600', marginBottom: '10px' } }, doc ? 'Editar documento' : 'Novo documento');
   box.appendChild(tit);
 
-  // ===== Upload IA (só para criação nova, não edição) =====
+  // ===== Upload IA + anexo (em criação OU edição) =====
+  // Se editando e já tem arquivo, oferece visualizar
+  if (doc && doc.arquivo_url) {
+    const linkVer = el('div');
+    linkVer.style.cssText = 'margin-bottom:10px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center';
+    linkVer.innerHTML = '<span>📎 Arquivo já anexado a este documento.</span>';
+    const btnVer = el('button', { type:'button' }, '👁 Visualizar');
+    btnVer.style.cssText = 'padding:4px 10px;border:1px solid #2563eb;background:#fff;color:#2563eb;border-radius:4px;cursor:pointer;font-size:11px';
+    btnVer.addEventListener('click', async () => {
+      try {
+        const url = await getArquivoUrl(doc.arquivo_url);
+        if (url) window.open(url, '_blank');
+      } catch (err) {
+        mostrarToast('Erro: ' + err.message, 'error');
+      }
+    });
+    linkVer.appendChild(btnVer);
+    box.appendChild(linkVer);
+  }
+
   if (!doc) {
     const uploadBox = el('div');
     uploadBox.style.cssText = 'border:2px dashed #cbd5e1;border-radius:6px;padding:14px;text-align:center;background:#fff;margin-bottom:12px;cursor:pointer';
@@ -438,8 +474,8 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
     uploadBox.innerHTML =
       '<input type="file" id="' + docInputId + '" accept="application/pdf" style="display:none">' +
       '<label for="' + docInputId + '" style="cursor:pointer;display:block">' +
-      '📎 <strong>Anexar PDF para auto-preencher com IA</strong><br>' +
-      '<span style="font-size:11px;color:var(--ink-soft)">Apólice de seguro, certidão, AVCB, alvará... O Claude lê e preenche os campos.</span>' +
+      '📎 <strong>Anexar PDF do documento</strong><br>' +
+      '<span style="font-size:11px;color:var(--ink-soft)">Apolice, certidao, AVCB, alvara... O Claude le e preenche os campos, e o arquivo fica arquivado para download depois.</span>' +
       '</label>';
     box.appendChild(uploadBox);
     const iaStatus = el('div', { style: { display: 'none', marginBottom: '12px', padding: '10px', borderRadius: '6px', fontSize: '12px' } });
@@ -452,6 +488,7 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
       inp.addEventListener('change', async () => {
         const f = inp.files?.[0];
         if (!f) return;
+        box._fileParaUpload = f; // GUARDA referência pra usar no submit
         uploadBox.style.borderColor = 'var(--green)';
         uploadBox.querySelector('label').innerHTML = '✓ <strong>' + f.name + '</strong> · ' + (f.size/1024).toFixed(1) + ' KB';
         iaStatus.style.display = 'block';
@@ -527,7 +564,24 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
         observacoes: obs || null
       };
       if (doc?.id) payload.id = doc.id;
-      await saveDocumento(payload);
+      // 1. Salva o documento (gera ID se for novo)
+      const docSalvo = await saveDocumento(payload);
+      // 2. Se tem arquivo anexado, faz upload e atualiza arquivo_url
+      if (box._fileParaUpload && docSalvo?.id) {
+        try {
+          const arquivo = await uploadArquivo(box._fileParaUpload, {
+            entidade_tipo: 'documento',
+            entidade_id: docSalvo.id,
+            categoria: 'doc_contrato'
+          });
+          if (arquivo?.storage_path) {
+            await saveDocumento({ id: docSalvo.id, arquivo_url: arquivo.storage_path });
+          }
+        } catch (err) {
+          console.error('Falha no upload do arquivo:', err);
+          mostrarToast('Documento salvo mas upload falhou: ' + err.message, 'error');
+        }
+      }
       mostrarToast(doc ? 'Documento atualizado' : 'Documento adicionado', 'success');
       onSalvarOuCancelar();
     } catch (err) {
