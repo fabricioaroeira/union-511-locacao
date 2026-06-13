@@ -144,7 +144,8 @@ export async function abrirFormContrato(id = null, opts = {}) {
           const row = el('div');
           row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
           const tamanho = a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '';
-          const tituloCat = a.categoria === 'aditivo' ? 'Aditivo' : (a.categoria === 'contrato_assinado' ? 'Contrato assinado' : (a.categoria || 'Arquivo'));
+          const LABELS_CAT = { contrato_assinado: 'Contrato', aditivo: 'Aditivos contratuais', termo: 'Termos', laudo: 'Laudos', fianca: 'Documentos garantia', documentos_pessoais: 'Documentos pessoais', comprovante: 'Comprovante', planta: 'Planta', outro: 'Outros' };
+          const tituloCat = LABELS_CAT[a.categoria] || (a.categoria || 'Arquivo');
           row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
           row.innerHTML =
             '<span style="font-size:20px">📄</span>' +
@@ -202,11 +203,13 @@ export async function abrirFormContrato(id = null, opts = {}) {
     const selCat = el('select');
     selCat.style.cssText = 'padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px';
     [
-      { v: 'aditivo', l: 'Aditivo' },
-      { v: 'fianca', l: 'Termo de fiança' },
+      { v: 'contrato_assinado',   l: 'Contrato' },
+      { v: 'aditivo',             l: 'Aditivos contratuais' },
+      { v: 'termo',               l: 'Termos' },
+      { v: 'laudo',               l: 'Laudos' },
+      { v: 'fianca',              l: 'Documentos garantia' },
       { v: 'documentos_pessoais', l: 'Documentos pessoais' },
-      { v: 'comprovante', l: 'Comprovante' },
-      { v: 'outro', l: 'Outro' }
+      { v: 'outro',               l: 'Outros' }
     ].forEach(function(o) {
       const op = el('option', { value: o.v }, o.l);
       selCat.appendChild(op);
