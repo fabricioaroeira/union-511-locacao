@@ -1,11 +1,12 @@
 // =====================================================================
 // Formulário de criar/editar proposta
 // =====================================================================
-import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta, getLead, deleteProposta } from './data-layer.js';
+import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta, getLead, deleteProposta, getArquivos, deleteArquivo } from './data-layer.js';
 import { abrirModal, campo, lojasPicker } from './modal.js';
 import { el, REF_RSM } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { extrairPropostaDoPDF } from './claude.js';
+import { uploadArquivo, getArquivoUrl } from './upload.js';
 
 export async function abrirFormProposta(id = null, opts = {}) {
   let dados = {};
@@ -162,6 +163,125 @@ export async function abrirFormProposta(id = null, opts = {}) {
   const sec4 = el('div', { className:'form-section' });
   sec4.appendChild(campo({ name:'observacoes', label:'Observações da proposta', type:'textarea', value:dados.observacoes, full:true, rows:3, hint:'Apenas o que o cliente formalizou na proposta. Anotações internas do lead ficam no próprio lead.' }));
   body.appendChild(sec4);
+
+  // ===== DOCUMENTOS PARA ANÁLISE (só ao editar proposta existente) =====
+  // Cliente que teve proposta aprovada envia documentos cadastrais; corretor anexa pra análise
+  if (id) {
+    const secDocsProp = el('div', { className: 'form-section' });
+    secDocsProp.appendChild(el('div', { className: 'form-section-title' }, '📎 Documentos para análise do proponente'));
+    secDocsProp.appendChild(el('div', {
+      style: { fontSize: '12px', color: 'var(--ink-soft)', marginBottom: '10px' }
+    }, 'Anexe aqui os documentos enviados pelo cliente (cadastro, comprovantes, garantias, fiador) para análise antes de fechar o contrato.'));
+    const arqListProp = el('div');
+    secDocsProp.appendChild(arqListProp);
+
+    const LABELS_CAT_PROP = {
+      documentos_pessoais: 'Documentos pessoais',
+      comprovante: 'Comprovantes',
+      fianca: 'Documentos garantia/fiador',
+      termo: 'Termos',
+      laudo: 'Laudos',
+      outro: 'Outros'
+    };
+
+    async function renderArqsProp() {
+      try {
+        const arquivos = await getArquivos('proposta', id);
+        arqListProp.innerHTML = '';
+        if (!arquivos || arquivos.length === 0) {
+          arqListProp.innerHTML = '<div style="padding:14px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;text-align:center;color:var(--ink-soft);font-size:13px">Nenhum documento anexado ainda. Use o botão abaixo para adicionar.</div>';
+          return;
+        }
+        arquivos.forEach(function(a) {
+          const row = el('div');
+          row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
+          const tamanho = a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '';
+          const tituloCat = LABELS_CAT_PROP[a.categoria] || (a.categoria || 'Documento');
+          row.innerHTML =
+            '<span style="font-size:20px">📋</span>' +
+            '<div style="min-width:0"><div style="font-weight:600;color:var(--ink)">' + tituloCat + '</div>' +
+              '<div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (a.nome_original || '?') + (tamanho ? ' · ' + tamanho : '') + '</div></div>' +
+            '<button type="button" class="btn outline sm" data-ver-prop style="font-size:11px;padding:5px 10px">👁 Ver</button>' +
+            '<label class="btn ghost sm" style="font-size:11px;padding:5px 10px;cursor:pointer;margin:0">📎 Substituir<input type="file" data-substituir-prop accept="application/pdf,image/jpeg,image/png" style="display:none"></label>' +
+            '<button type="button" class="btn ghost sm" data-excluir-prop style="font-size:11px;padding:5px 10px;color:#dc2626" title="Excluir documento">🗑</button>';
+          row.querySelector('[data-ver-prop]').addEventListener('click', async function() {
+            try {
+              const url = await getArquivoUrl(a.storage_path);
+              if (url) window.open(url, '_blank');
+              else mostrarToast('Arquivo não encontrado', 'error');
+            } catch (err) {
+              mostrarToast('Erro: ' + err.message, 'error');
+            }
+          });
+          row.querySelector('[data-substituir-prop]').addEventListener('change', async function(ev) {
+            const f = ev.target.files && ev.target.files[0];
+            if (!f) return;
+            try {
+              await uploadArquivo(f, { entidade_tipo: 'proposta', entidade_id: id, categoria: a.categoria || 'outro' });
+              mostrarToast('Arquivo enviado. O anterior fica como histórico.', 'success');
+              await renderArqsProp();
+            } catch (err) {
+              mostrarToast('Erro ao substituir: ' + err.message, 'error');
+            }
+          });
+          row.querySelector('[data-excluir-prop]').addEventListener('click', async function() {
+            if (!confirm('Excluir definitivamente o documento "' + (a.nome_original || tituloCat) + '"?\n\nEsta acao nao pode ser desfeita.')) return;
+            try {
+              await deleteArquivo(a.id, a.storage_path);
+              mostrarToast('Documento excluido', 'success');
+              await renderArqsProp();
+            } catch (err) {
+              mostrarToast('Erro ao excluir: ' + err.message, 'error');
+            }
+          });
+          arqListProp.appendChild(row);
+        });
+      } catch (err) {
+        console.error('Erro ao carregar documentos:', err);
+        arqListProp.innerHTML = '<div style="padding:14px;color:#991b1b;font-size:12px">Falha ao carregar documentos: ' + err.message + '</div>';
+      }
+    }
+
+    // Botão "+ Anexar documento"
+    const addBoxProp = el('div');
+    addBoxProp.style.cssText = 'margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    const selCatProp = el('select');
+    selCatProp.style.cssText = 'padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px';
+    [
+      { v: 'documentos_pessoais', l: 'Documentos pessoais' },
+      { v: 'comprovante',         l: 'Comprovantes' },
+      { v: 'fianca',              l: 'Documentos garantia/fiador' },
+      { v: 'outro',               l: 'Outros' }
+    ].forEach(function(o) {
+      const op = el('option', { value: o.v }, o.l);
+      selCatProp.appendChild(op);
+    });
+    const inpNovoProp = el('input', { type: 'file', accept: 'application/pdf,image/jpeg,image/png', style: 'display:none' });
+    const inpIdProp = 'inp-novo-arq-prop-' + id;
+    inpNovoProp.id = inpIdProp;
+    const lblNovoProp = el('label', { className: 'btn outline sm', style: 'font-size:11px;padding:5px 10px;cursor:pointer;margin:0' }, '+ Anexar documento');
+    lblNovoProp.htmlFor = inpIdProp;
+    addBoxProp.appendChild(selCatProp);
+    addBoxProp.appendChild(lblNovoProp);
+    addBoxProp.appendChild(inpNovoProp);
+    secDocsProp.appendChild(addBoxProp);
+
+    inpNovoProp.addEventListener('change', async function(ev) {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      try {
+        await uploadArquivo(f, { entidade_tipo: 'proposta', entidade_id: id, categoria: selCatProp.value });
+        mostrarToast('Documento anexado', 'success');
+        inpNovoProp.value = '';
+        await renderArqsProp();
+      } catch (err) {
+        mostrarToast('Erro: ' + err.message, 'error');
+      }
+    });
+
+    body.appendChild(secDocsProp);
+    renderArqsProp();
+  }
 
   // Zona de perigo (só em edição) — Excluir proposta
   if (id) {
