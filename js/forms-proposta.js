@@ -176,7 +176,7 @@ export async function abrirFormProposta(id = null, opts = {}) {
     secDocsProp.appendChild(arqListProp);
 
     const LABELS_CAT_PROP = {
-      documentos_pessoais: 'Documentos pessoais',
+      documentos_pessoais: 'Documentos do proponente',
       comprovante: 'Comprovantes',
       fianca: 'Documentos garantia/fiador',
       termo: 'Termos',
@@ -248,7 +248,7 @@ export async function abrirFormProposta(id = null, opts = {}) {
     const selCatProp = el('select');
     selCatProp.style.cssText = 'padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px';
     [
-      { v: 'documentos_pessoais', l: 'Documentos pessoais' },
+      { v: 'documentos_pessoais', l: 'Documentos do proponente' },
       { v: 'comprovante',         l: 'Comprovantes' },
       { v: 'fianca',              l: 'Documentos garantia/fiador' },
       { v: 'outro',               l: 'Outros' }
