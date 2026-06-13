@@ -455,6 +455,24 @@ function renderPropostas(propostas, filtroAtual = 'ativas', propostasAtivas = []
   const propLista = document.getElementById('propostas-list');
   propLista.innerHTML = '';
 
+  // Carrega contagem de arquivos pra cada proposta (uma vez só, em paralelo)
+  const contagemArqs = {};
+  Promise.all(propostas.map(p => getArquivos('proposta', p.id).catch(() => [])))
+    .then(resultados => {
+      resultados.forEach((arq, i) => {
+        contagemArqs[propostas[i].id] = (arq || []).length;
+      });
+      // Atualiza os botões já renderizados com a contagem real
+      propostas.forEach(p => {
+        const btn = propLista.querySelector('[data-docs-prop="' + p.id + '"]');
+        if (btn) {
+          const n = contagemArqs[p.id] || 0;
+          btn.textContent = '📎 Documentos (' + n + ')';
+          btn.style.opacity = n > 0 ? '1' : '0.7';
+        }
+      });
+    });
+
   propostas.forEach(p => {
     const isAceita = p.status === 'aceita_aguardando_docs';
     const card = el('div', { className: 'proposta-card ' + (isAceita ? 'aceita' : 'analise') });
@@ -520,6 +538,7 @@ function renderPropostas(propostas, filtroAtual = 'ativas', propostasAtivas = []
       <div class="proposta-rodape">
         <div>Origem: <strong>${p.corretor}</strong>${p.cv ? ' · CV ' + p.cv : ''} · Data: ${p.data_proposta}</div>
         <div class="proposta-acoes">
+          <button class="btn outline sm" data-docs-prop="${p.id}">📎 Documentos</button>
           <button class="btn outline sm" data-edit-prop="${p.id}">✏️ Editar</button>
           ${isAceita ? `<button class="btn sm" data-converter="${p.id}">✓ Converter em contrato</button>` : ''}
         </div>
@@ -533,6 +552,9 @@ function renderPropostas(propostas, filtroAtual = 'ativas', propostasAtivas = []
   );
   propLista.querySelectorAll('[data-converter]').forEach(btn =>
     btn.addEventListener('click', () => abrirFormContrato(null, { fromProposta: btn.dataset.converter }))
+  );
+  propLista.querySelectorAll('[data-docs-prop]').forEach(btn =>
+    btn.addEventListener('click', () => abrirModalArquivosProposta(btn.dataset.docsProp))
   );
 }
 
@@ -1024,6 +1046,65 @@ async function abrirModalDocumentos(contratoId) {
 
   abrirModal({
     titulo: 'Documentos do contrato',
+    body,
+    submitLabel: 'Fechar',
+    onSubmit: async () => { /* só fecha */ }
+  });
+}
+
+
+// =====================================================================
+// Modal "Documentos da proposta" — lista arquivos para análise
+// =====================================================================
+async function abrirModalArquivosProposta(propostaId) {
+  const arquivos = await getArquivos('proposta', propostaId).catch(() => []);
+  const body = el('div');
+
+  const LABELS_CAT_PROP = {
+    documentos_pessoais: 'Documentos do proponente',
+    comprovante: 'Comprovantes',
+    fianca: 'Documentos garantia/fiador',
+    termo: 'Termos',
+    laudo: 'Laudos',
+    outro: 'Outros'
+  };
+
+  if (!arquivos || arquivos.length === 0) {
+    body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum documento anexado a esta proposta ainda.<br><span style="font-size:12px">Use o botão ✏️ Editar e a seção "Documentos para análise do proponente" para adicionar.</span></div>';
+  } else {
+    arquivos.forEach(a => {
+      const row = el('div');
+      row.style.cssText = 'display:flex;gap:12px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px';
+      const titulo = LABELS_CAT_PROP[a.categoria] || a.categoria || 'Documento';
+      const sub = (a.nome_original || '?') + (a.tamanho_bytes ? ' · ' + (a.tamanho_bytes/1024).toFixed(1) + ' KB' : '');
+      row.innerHTML =
+        '<span style="font-size:22px">📋</span>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:600;color:var(--ink);font-size:13px">' + titulo + '</div>' +
+          '<div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + sub + '</div>' +
+        '</div>' +
+        '<button class="btn outline sm" data-baixar-prop style="font-size:11px;padding:5px 10px;white-space:nowrap">📎 Baixar</button>';
+      row.querySelector('[data-baixar-prop]').addEventListener('click', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        b.textContent = '...';
+        try {
+          const url = await getArquivoUrl(a.storage_path);
+          if (url) window.open(url, '_blank');
+          else mostrarToast('Arquivo não encontrado', 'error');
+        } catch (err) {
+          mostrarToast('Erro: ' + err.message, 'error');
+        } finally {
+          b.disabled = false;
+          b.textContent = '📎 Baixar';
+        }
+      });
+      body.appendChild(row);
+    });
+  }
+
+  abrirModal({
+    titulo: 'Documentos da proposta',
     body,
     submitLabel: 'Fechar',
     onSubmit: async () => { /* só fecha */ }
