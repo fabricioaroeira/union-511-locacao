@@ -828,6 +828,18 @@ export async function getArquivos(entidade_tipo, entidade_id) {
   return data;
 }
 
+// Deleta arquivo: remove do Storage E do registro na tabela
+export async function deleteArquivo(arquivoId, storage_path) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  if (storage_path) {
+    try { await supa.storage.from('arquivos').remove([storage_path]); }
+    catch (e) { console.warn('Falha ao remover do Storage (segue):', e); }
+  }
+  const { error } = await supa.from('arquivos').delete().eq('id', arquivoId);
+  if (error) throw new Error('Erro ao excluir arquivo: ' + error.message);
+}
+
 // =====================================================================
 // DOCUMENTOS DE CONTRATO (seguros, certidões, vistorias, AVCB...)
 // =====================================================================

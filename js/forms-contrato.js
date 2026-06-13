@@ -2,7 +2,7 @@
 // Formulário de criar/editar contrato
 // =====================================================================
 import { getContrato, saveContrato, getInquilinos, getLojasStatus, getProposta, saveInquilino,
-         getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO, getArquivos } from './data-layer.js';
+         getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO, getArquivos, deleteArquivo } from './data-layer.js';
 import { abrirModal, campo, lojasPicker } from './modal.js';
 import { el, fmtBR, parseBR } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
@@ -145,12 +145,14 @@ export async function abrirFormContrato(id = null, opts = {}) {
           row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
           const tamanho = a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '';
           const tituloCat = a.categoria === 'aditivo' ? 'Aditivo' : (a.categoria === 'contrato_assinado' ? 'Contrato assinado' : (a.categoria || 'Arquivo'));
+          row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
           row.innerHTML =
             '<span style="font-size:20px">📄</span>' +
             '<div style="min-width:0"><div style="font-weight:600;color:var(--ink)">' + tituloCat + '</div>' +
               '<div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (a.nome_original || '?') + (tamanho ? ' · ' + tamanho : '') + '</div></div>' +
             '<button type="button" class="btn outline sm" data-ver style="font-size:11px;padding:5px 10px">👁 Ver</button>' +
-            '<label class="btn ghost sm" style="font-size:11px;padding:5px 10px;cursor:pointer;margin:0">📎 Substituir<input type="file" data-substituir accept="application/pdf" style="display:none"></label>';
+            '<label class="btn ghost sm" style="font-size:11px;padding:5px 10px;cursor:pointer;margin:0">📎 Substituir<input type="file" data-substituir accept="application/pdf" style="display:none"></label>' +
+            '<button type="button" class="btn ghost sm" data-excluir style="font-size:11px;padding:5px 10px;color:#dc2626" title="Excluir arquivo">🗑</button>';
           row.querySelector('[data-ver]').addEventListener('click', async function() {
             try {
               const url = await getArquivoUrl(a.storage_path);
@@ -174,6 +176,16 @@ export async function abrirFormContrato(id = null, opts = {}) {
               await renderArquivos();
             } catch (err) {
               mostrarToast('Erro ao substituir: ' + err.message, 'error');
+            }
+          });
+          row.querySelector('[data-excluir]').addEventListener('click', async function() {
+            if (!confirm('Excluir definitivamente o arquivo "' + (a.nome_original || tituloCat) + '"?\n\nEsta acao nao pode ser desfeita.')) return;
+            try {
+              await deleteArquivo(a.id, a.storage_path);
+              mostrarToast('Arquivo excluido', 'success');
+              await renderArquivos();
+            } catch (err) {
+              mostrarToast('Erro ao excluir: ' + err.message, 'error');
             }
           });
           arqList.appendChild(row);
