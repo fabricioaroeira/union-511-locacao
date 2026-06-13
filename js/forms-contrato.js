@@ -2,7 +2,7 @@
 // Formulário de criar/editar contrato
 // =====================================================================
 import { getContrato, saveContrato, getInquilinos, getLojasStatus, getProposta, saveInquilino,
-         getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO } from './data-layer.js';
+         getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO, getArquivos } from './data-layer.js';
 import { abrirModal, campo, lojasPicker } from './modal.js';
 import { el, fmtBR, parseBR } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
@@ -121,6 +121,114 @@ export async function abrirFormContrato(id = null, opts = {}) {
   grid5.appendChild(campo({ name: 'observacoes', label: 'Observações', type: 'textarea', value: dados.observacoes, full: true, rows: 4 }));
   sec5.appendChild(grid5);
   body.appendChild(sec5);
+
+  // === ARQUIVOS DO CONTRATO (PDF assinado, aditivos) — modo edição ===
+  if (id) {
+    const secArq = el('div', { className: 'form-section' });
+    secArq.appendChild(el('div', { className: 'form-section-title' }, '📄 Arquivos do contrato'));
+    secArq.appendChild(el('div', {
+      style: { fontSize: '12px', color: 'var(--ink-soft)', marginBottom: '10px' }
+    }, 'PDF do contrato assinado, aditivos e outros arquivos relacionados ao contrato.'));
+    const arqList = el('div');
+    secArq.appendChild(arqList);
+
+    async function renderArquivos() {
+      try {
+        const arquivos = await getArquivos('contrato', id);
+        arqList.innerHTML = '';
+        if (!arquivos || arquivos.length === 0) {
+          arqList.innerHTML = '<div style="padding:14px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;text-align:center;color:var(--ink-soft);font-size:13px">Nenhum arquivo anexado a este contrato.</div>';
+          return;
+        }
+        arquivos.forEach(function(a) {
+          const row = el('div');
+          row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
+          const tamanho = a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '';
+          const tituloCat = a.categoria === 'aditivo' ? 'Aditivo' : (a.categoria === 'contrato_assinado' ? 'Contrato assinado' : (a.categoria || 'Arquivo'));
+          row.innerHTML =
+            '<span style="font-size:20px">📄</span>' +
+            '<div style="min-width:0"><div style="font-weight:600;color:var(--ink)">' + tituloCat + '</div>' +
+              '<div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (a.nome_original || '?') + (tamanho ? ' · ' + tamanho : '') + '</div></div>' +
+            '<button type="button" class="btn outline sm" data-ver style="font-size:11px;padding:5px 10px">👁 Ver</button>' +
+            '<label class="btn ghost sm" style="font-size:11px;padding:5px 10px;cursor:pointer;margin:0">📎 Substituir<input type="file" data-substituir accept="application/pdf" style="display:none"></label>';
+          row.querySelector('[data-ver]').addEventListener('click', async function() {
+            try {
+              const url = await getArquivoUrl(a.storage_path);
+              if (url) window.open(url, '_blank');
+              else mostrarToast('Arquivo não encontrado', 'error');
+            } catch (err) {
+              mostrarToast('Erro: ' + err.message, 'error');
+            }
+          });
+          row.querySelector('[data-substituir]').addEventListener('change', async function(ev) {
+            const f = ev.target.files && ev.target.files[0];
+            if (!f) return;
+            try {
+              const novo = await uploadArquivo(f, {
+                entidade_tipo: 'contrato',
+                entidade_id: id,
+                categoria: a.categoria || 'outro'
+              });
+              // Não deleto o antigo (mantém histórico). Apenas mostra que tem o novo.
+              mostrarToast('Arquivo enviado. O anterior fica como histórico.', 'success');
+              await renderArquivos();
+            } catch (err) {
+              mostrarToast('Erro ao substituir: ' + err.message, 'error');
+            }
+          });
+          arqList.appendChild(row);
+        });
+      } catch (err) {
+        console.error('Erro ao carregar arquivos:', err);
+        arqList.innerHTML = '<div style="padding:14px;color:#991b1b;font-size:12px">Falha ao carregar arquivos: ' + err.message + '</div>';
+      }
+    }
+
+    // Botão "+ Anexar novo arquivo" (ex: aditivo)
+    const addBox = el('div');
+    addBox.style.cssText = 'margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    const selCat = el('select');
+    selCat.style.cssText = 'padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px';
+    [
+      { v: 'aditivo', l: 'Aditivo' },
+      { v: 'fianca', l: 'Termo de fiança' },
+      { v: 'documentos_pessoais', l: 'Documentos pessoais' },
+      { v: 'comprovante', l: 'Comprovante' },
+      { v: 'outro', l: 'Outro' }
+    ].forEach(function(o) {
+      const op = el('option', { value: o.v }, o.l);
+      selCat.appendChild(op);
+    });
+    const inpNovo = el('input', { type: 'file', accept: 'application/pdf,image/jpeg,image/png', style: 'display:none' });
+    const inpId = 'inp-novo-arq-' + id;
+    inpNovo.id = inpId;
+    const lblNovo = el('label', { className: 'btn outline sm', style: 'font-size:11px;padding:5px 10px;cursor:pointer;margin:0' }, '+ Anexar novo arquivo');
+    lblNovo.htmlFor = inpId;
+    addBox.appendChild(selCat);
+    addBox.appendChild(lblNovo);
+    addBox.appendChild(inpNovo);
+    secArq.appendChild(addBox);
+
+    inpNovo.addEventListener('change', async function(ev) {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      try {
+        await uploadArquivo(f, {
+          entidade_tipo: 'contrato',
+          entidade_id: id,
+          categoria: selCat.value
+        });
+        mostrarToast('Arquivo anexado', 'success');
+        inpNovo.value = '';
+        await renderArquivos();
+      } catch (err) {
+        mostrarToast('Erro: ' + err.message, 'error');
+      }
+    });
+
+    body.appendChild(secArq);
+    renderArquivos();
+  }
 
   // Documentos do contrato (só ao editar contrato existente — precisa do id pra vincular)
   if (id) {
