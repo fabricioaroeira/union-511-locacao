@@ -8,7 +8,12 @@ const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/claude-proxy`;
 async function authHeaders() {
   const sb = await getSupabase();
   const { data } = await sb.auth.getSession();
-  const token = data?.session?.access_token || SUPABASE_ANON_KEY;
+  const token = data?.session?.access_token;
+  // A Edge Function exige JWT válido — se não tiver session, falhamos cedo
+  // com mensagem clara em vez de mandar uma anon key que vai voltar 401.
+  if (!token) {
+    throw new Error('Sessão expirada. Faça login novamente para usar a IA.');
+  }
   return {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,

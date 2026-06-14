@@ -2,7 +2,7 @@
 // Formulário de criar/editar proposta
 // =====================================================================
 import { getProposta, saveProposta, getLojasStatus, vincularLeadAProposta, getLead, deleteProposta, getArquivos, deleteArquivo } from './data-layer.js';
-import { abrirModal, campo, lojasPicker } from './modal.js';
+import { abrirModal, campo, lojasPicker , confirmarAcao} from './modal.js';
 import { el, REF_RSM } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { extrairPropostaDoPDF } from './claude.js';
@@ -225,7 +225,7 @@ export async function abrirFormProposta(id = null, opts = {}) {
             }
           });
           row.querySelector('[data-excluir-prop]').addEventListener('click', async function() {
-            if (!confirm('Excluir definitivamente o documento "' + (a.nome_original || tituloCat) + '"?\n\nEsta acao nao pode ser desfeita.')) return;
+            if (!(await confirmarAcao({ titulo: 'Excluir documento', mensagem: 'Excluir definitivamente o documento "' + (a.nome_original || tituloCat) + '"?\n\nEsta ação não pode ser desfeita.', confirmLabel: 'Excluir', perigo: true }))) return;
             try {
               await deleteArquivo(a.id, a.storage_path);
               mostrarToast('Documento excluido', 'success');
@@ -307,7 +307,7 @@ export async function abrirFormProposta(id = null, opts = {}) {
     const btnDel = el('button', { type: 'button' }, '🗑 Excluir proposta');
     btnDel.style.cssText = 'padding:8px 14px;background:#dc2626;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600';
     btnDel.addEventListener('click', async function() {
-      const confirmacao = confirm('Tem certeza que deseja excluir esta proposta?\n\nSe houver lead vinculado, ele voltará para o status "' + selStatus.options[selStatus.selectedIndex].text.replace('Voltar lead pra: ','') + '".\n\nEsta ação NÃO pode ser desfeita.');
+      const confirmacao = await confirmarAcao({ titulo: 'Excluir proposta', mensagem: 'Tem certeza que deseja excluir esta proposta?\n\nSe houver lead vinculado, ele voltará para o status "' + selStatus.options[selStatus.selectedIndex].text.replace('Voltar lead pra: ','') + '".\n\nEsta ação NÃO pode ser desfeita.', confirmLabel: 'Excluir', perigo: true });
       if (!confirmacao) return;
       btnDel.disabled = true;
       btnDel.textContent = 'Excluindo...';

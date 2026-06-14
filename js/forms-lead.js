@@ -2,7 +2,7 @@
 // Formulário de criar/editar Lead (CRM)
 // =====================================================================
 import { getLead, saveLead, getLojasStatus, adicionarInteracao, deleteLead, vincularLeadAProposta } from './data-layer.js';
-import { abrirModal, campo, lojasPicker, fecharModal } from './modal.js';
+import { abrirModal, campo, lojasPicker, fecharModal , confirmarAcao} from './modal.js';
 import { el } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { abrirFormProposta } from './forms-proposta.js';
@@ -155,7 +155,7 @@ export async function abrirFormLead(id = null) {
 
     const btnExcluir = el('button', { type: 'button', className: 'btn outline', style: 'color:var(--red);border-color:var(--red)' }, '🗑 Excluir lead');
     btnExcluir.addEventListener('click', async () => {
-      if (!confirm('Excluir este lead permanentemente? Toda a timeline também será apagada.')) return;
+      if (!(await confirmarAcao({ titulo: 'Excluir lead', mensagem: 'Excluir este lead permanentemente? Toda a timeline também será apagada.', confirmLabel: 'Excluir', perigo: true }))) return;
       try {
         await deleteLead(id);
         fecharModal();

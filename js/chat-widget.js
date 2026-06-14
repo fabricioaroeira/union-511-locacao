@@ -37,9 +37,8 @@ export function initChatWidget() {
 
   if (!widget || !trigger || !painel) return;
 
-  // Hover pra abrir (desktop). No mobile, clique
+  // Abrir/fechar só por clique — sem hover (evita ativar acidentalmente ao mover o mouse perto do canto)
   const abrir = () => {
-    if (timerFechar) { clearTimeout(timerFechar); timerFechar = null; }
     if (widget.classList.contains('aberto')) return;
     widget.classList.add('aberto');
     if (mensagensEl.children.length === 0) {
@@ -50,24 +49,18 @@ export function initChatWidget() {
   const fechar = () => {
     widget.classList.remove('aberto');
   };
-  const fecharComDelay = () => {
-    if (timerFechar) clearTimeout(timerFechar);
-    timerFechar = setTimeout(fechar, 400);
-  };
 
-  // Trigger: hover (desktop) + click (mobile/sempre)
-  trigger.addEventListener('mouseenter', abrir);
+  // Trigger: APENAS click (mais previsível e acessível)
   trigger.addEventListener('click', () => {
     if (widget.classList.contains('aberto')) fechar();
     else abrir();
   });
-  // Manter aberto quando o mouse está dentro do widget inteiro
-  widget.addEventListener('mouseleave', fecharComDelay);
-  widget.addEventListener('mouseenter', () => {
-    if (timerFechar) { clearTimeout(timerFechar); timerFechar = null; }
-  });
   // Botão close
   btnClose.addEventListener('click', (e) => { e.stopPropagation(); fechar(); });
+  // ESC fecha o widget se estiver aberto
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && widget.classList.contains('aberto')) fechar();
+  });
 
   // Sugestões rápidas
   const sugestoes = [

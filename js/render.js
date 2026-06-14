@@ -6,7 +6,7 @@ import {
   getDocumentosByContrato, TIPOS_DOCUMENTO
 } from './data-layer.js';
 import { getArquivoUrl } from './upload.js';
-import { abrirModal } from './modal.js';
+import { abrirModal , promptCustom} from './modal.js';
 import {
   formatMoney, formatMoneyShort, formatPercent, formatArea,
   fmtBR, parseBR, addMonths, mesesEntre, el,
@@ -16,6 +16,7 @@ import { abrirFormContrato } from './forms-contrato.js';
 import { abrirFormProposta } from './forms-proposta.js';
 import { abrirFormLead } from './forms-lead.js';
 import { renderPlanta } from './planta-view.js';
+import { getState } from './state.js';
 
 // ---------------------------------------------------------------------
 // TOAST
@@ -31,7 +32,7 @@ export function mostrarToast(msg, tipo = 'success') {
 // Renderização completa do dashboard
 // ---------------------------------------------------------------------
 export async function renderTudo() {
-  const filtroProp = window._propostasFiltro || 'ativas';
+  const filtroProp = getState('propostasFiltro');
   const [kpis, lojas, inquilinos, contratos, propostasAtivas, propostasFiltro, leads] = await Promise.all([
     getKPIs(), getLojasStatus(), getInquilinos(), getContratos('ativo'),
     getPropostas('ativas'),  // pra mapa, KPIs e legenda
@@ -110,44 +111,6 @@ function renderKpis(k) {
   `;
 }
 
-// ---------------------------------------------------------------------
-// Grid de 52 lojas
-// ---------------------------------------------------------------------
-function renderGrid(lojas, contratos, propostas) {
-  const grid = document.getElementById('grid');
-  grid.innerHTML = '';
-  grid.className = 'grid';
-  const contratosByLoja = {};
-  contratos.forEach(c => (c.lojas || []).forEach(codigo => contratosByLoja[codigo] = c));
-  const propostaByLoja = {};
-  propostas.forEach(p => (p.lojas || []).forEach(codigo => propostaByLoja[codigo] = p));
-
-  lojas.forEach(l => {
-    const div = el('div', { className: 'cell', textContent: l.codigo });
-    let cls = 'disponivel';
-    let title = `Loja ${l.codigo} — Disponível${l.area_privativa ? ' · ' + l.area_privativa + ' m²' : ''}`;
-    if (l.status === 'uso_interno') {
-      cls = 'interna';
-      title = `Loja ${l.codigo} — Uso interno JAX 28 (central de vendas)`;
-    } else if (l.status === 'ocupada') {
-      const c = contratosByLoja[l.codigo];
-      cls = c?.parcial ? 'parcial' : 'ocupada';
-      title = `Loja ${l.codigo} — ${l.inquilino_atual}\n${formatMoney(c?.valor_aluguel || 0)}/mês · ${c?.indice_reajuste}${l.area_privativa ? ' · ' + l.area_privativa + ' m²' : ''}`;
-    } else if (l.status === 'proposta_aceita') {
-      const p = propostaByLoja[l.codigo];
-      cls = 'proposta-aceita';
-      title = `Loja ${l.codigo} — Proposta aceita aguardando docs\n${p?.cliente_nome}\n${formatMoney(p?.valor_aluguel || 0)}/mês`;
-    } else if (l.status === 'proposta_analise') {
-      const p = propostaByLoja[l.codigo];
-      cls = 'proposta-analise';
-      title = `Loja ${l.codigo} — Proposta em análise\n${p?.cliente_nome}\n${formatMoney(p?.valor_aluguel || 0)}/mês`;
-    }
-    div.classList.add(cls);
-    div.title = title;
-    grid.appendChild(div);
-  });
-}
-
 function renderLegenda(k, propostas) {
   const disp = k.lojas_locaveis - k.lojas_ocupadas;
   const pAceitas = propostas.filter(p => p.status === 'aceita_aguardando_docs').reduce((s,p)=>s+(p.lojas?.length||0),0);
@@ -182,72 +145,6 @@ function renderOcupacao(k) {
 }
 
 // ---------------------------------------------------------------------
-// Potencial de receita (DEPRECATED — não usado mais; mantido só para compatibilidade)
-// ---------------------------------------------------------------------
-function renderPotencialReceita(k) {
-  const target = document.getElementById('potencial-receita');
-  if (!target) return; // seção foi removida do HTML
-  const areaTotal = 3743;
-  const areaInternas = (areaTotal / 52) * k.lojas_internas;
-  const areaLocavel = areaTotal - areaInternas;
-  const conservador = areaLocavel * REF_RSM.conservador;
-  const realista = areaLocavel * REF_RSM.medio;
-  const otimista = areaLocavel * REF_RSM.ancora;
-  const headroom = realista - k.receita_cheia_mes;
-  const pctRealizado = (k.receita_cheia_mes / realista * 100);
-
-  target.innerHTML = `
-    <table>
-      <thead>
-        <tr><th>Cenário</th><th>R$/m²</th><th>Premissa</th><th>Receita potencial/mês</th><th>Anual</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong style="color:var(--amber)">Conservador</strong></td>
-          <td>R$ ${REF_RSM.conservador.toFixed(2)}</td>
-          <td>Média simples lojas pequenas (JRBL + Maria Teresa)</td>
-          <td><strong>${formatMoney(conservador,{decimals:0})}</strong></td>
-          <td>${formatMoney(conservador*12,{decimals:0})}</td>
-        </tr>
-        <tr>
-          <td><strong style="color:var(--accent)">Realista</strong></td>
-          <td>R$ ${REF_RSM.medio.toFixed(2)}</td>
-          <td>Média ponderada por área dos contratos com m² conhecido</td>
-          <td><strong>${formatMoney(realista,{decimals:0})}</strong></td>
-          <td>${formatMoney(realista*12,{decimals:0})}</td>
-        </tr>
-        <tr>
-          <td><strong style="color:var(--green)">Otimista</strong></td>
-          <td>R$ ${REF_RSM.ancora.toFixed(2)}</td>
-          <td>R$/m² da âncora Pague Menos</td>
-          <td><strong>${formatMoney(otimista,{decimals:0})}</strong></td>
-          <td>${formatMoney(otimista*12,{decimals:0})}</td>
-        </tr>
-      </tbody>
-    </table>
-    <div style="margin-top:16px;padding:14px;background:#f8fafc;border-radius:8px;border:1px solid var(--line)">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:13px">
-        <div>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);font-weight:600;margin-bottom:4px">Receita atual cheia</div>
-          <div style="font-size:18px;font-weight:700;color:var(--ink)">${formatMoney(k.receita_cheia_mes,{decimals:0})}/mês</div>
-          <div style="font-size:11px;color:var(--ink-soft)">${formatMoney(k.receita_cheia_mes*12,{decimals:0})}/ano</div>
-        </div>
-        <div>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);font-weight:600;margin-bottom:4px">% realizado (Realista)</div>
-          <div style="font-size:18px;font-weight:700;color:var(--accent)">${formatPercent(pctRealizado)}</div>
-          <div style="font-size:11px;color:var(--ink-soft)">do potencial total</div>
-        </div>
-        <div>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);font-weight:600;margin-bottom:4px">Headroom</div>
-          <div style="font-size:18px;font-weight:700;color:var(--green)">${formatMoney(headroom,{decimals:0})}/mês</div>
-          <div style="font-size:11px;color:var(--ink-soft)">${formatMoney(headroom*12,{decimals:0})}/ano</div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------
 // Mix de inquilinos
 // ---------------------------------------------------------------------
 function renderMix(contratos, inquilinos) {
@@ -270,11 +167,19 @@ async function renderTabelaOcupadas(contratos, lojas) {
   const areaByCodigo = {};
   (lojas || []).forEach(l => { areaByCodigo[l.codigo] = l.area_privativa; });
 
-  for (const c of sorted) {
-    const [arquivos, documentos] = await Promise.all([
+  // === Otimização: busca todos os arquivos+documentos de TODOS os contratos em paralelo ===
+  // Antes: serial dentro do for (N+1 requests, ~N×latência)
+  // Agora: 1 Promise.all com 2×N requests disparadas juntas
+  const arqsPorContrato = await Promise.all(sorted.map(c =>
+    Promise.all([
       getArquivos('contrato', c.id).catch(() => []),
       getDocumentosByContrato(c.id).catch(() => [])
-    ]);
+    ])
+  ));
+
+  for (let i = 0; i < sorted.length; i++) {
+    const c = sorted[i];
+    const [arquivos, documentos] = arqsPorContrato[i];
     const status = c.parcial ? '<span class="badge parcial">Parcial</span>' : '<span class="badge ocupada">Ocupada</span>';
     const termino = c.data_termino || fmtBR(addMonths(parseBR(c.data_inicio), c.prazo_meses));
     const totalDocs = (arquivos?.length || 0) + (documentos?.length || 0);
@@ -331,7 +236,15 @@ async function renderTabelaOcupadas(contratos, lojas) {
   });
   tbl.querySelectorAll('[data-encerrar]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const motivo = prompt('Motivo do encerramento:');
+      const motivo = await promptCustom({
+        titulo: 'Encerrar contrato',
+        mensagem: 'Informe o motivo do encerramento. Este texto fica registrado no histórico.',
+        label: 'Motivo do encerramento',
+        placeholder: 'Ex: Inquilino solicitou rescisão antecipada',
+        multiline: true,
+        rows: 3,
+        confirmLabel: 'Encerrar contrato'
+      });
       if (!motivo) return;
       await encerrarContrato(btn.dataset.encerrar, motivo);
       mostrarToast('Contrato encerrado');
@@ -794,7 +707,7 @@ function renderLeads(leads) {
   const resumoBox = document.getElementById('leads-resumo');
   if (!resumoBox) return;
 
-  const filtroAtual = window._leadsFiltro || 'ativos';
+  const filtroAtual = getState('leadsFiltro');
 
   // Contadores por status (universo todo)
   const ativosArr = leads.filter(l => ['interessado','visitou','em_analise'].includes(l.status));
@@ -1093,7 +1006,7 @@ async function abrirModalArquivosProposta(propostaId) {
           if (url) window.open(url, '_blank');
           else mostrarToast('Arquivo não encontrado', 'error');
         } catch (err) {
-          mostrarToast('Erro: ' + err.message, 'error');
+        mostrarToast('Erro: ' + err.message, 'error');
         } finally {
           b.disabled = false;
           b.textContent = '📎 Baixar';

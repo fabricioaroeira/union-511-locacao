@@ -287,11 +287,16 @@ export async function saveContrato(input) {
     }
 
     let contrato;
+    const lojasFoiPassado = 'lojas' in input; // true mesmo se [] (limpar tudo)
     if (input.id) {
       const { data, error } = await supa.from('contratos').update(contratoBase).eq('id', input.id).select().single();
       if (error) throw new Error('Erro ao atualizar contrato: ' + (error.message || JSON.stringify(error)));
       contrato = data;
-      await supa.from('contrato_lojas').delete().eq('contrato_id', input.id);
+      // SÓ apaga vínculos se o caller realmente quer substituir as lojas.
+      // Antes: sempre apagava — bug ao chamar saveContrato({id, status:'encerrado'}) sem lojas perdia os vínculos.
+      if (lojasFoiPassado) {
+        await supa.from('contrato_lojas').delete().eq('contrato_id', input.id);
+      }
     } else {
       // Remove campos null/undefined/vazios pra deixar o default do banco atuar (ex: id = gen_random_uuid())
       const payload = Object.fromEntries(Object.entries(contratoBase).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
@@ -300,7 +305,7 @@ export async function saveContrato(input) {
       contrato = data;
     }
     if (!contrato || !contrato.id) throw new Error('Contrato salvo mas resposta vazia');
-    if (lojas?.length) {
+    if (lojasFoiPassado && lojas?.length) {
       const lojasMapeadas = lojas.map(codigo => ({ contrato_id: contrato.id, loja_id: parseInt(codigo, 10) }));
       const { error: errLojas } = await supa.from('contrato_lojas').insert(lojasMapeadas);
       if (errLojas) throw new Error('Erro ao vincular lojas ao contrato: ' + errLojas.message);
@@ -882,7 +887,6 @@ export async function getDocumentosTodos() {
     });
   });
 }
-
 export async function saveDocumento(input) {
   if (MOCK_MODE) return input;
   const supa = await getSupabase();

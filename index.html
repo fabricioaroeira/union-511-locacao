@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP básico: restringe scripts/estilos a self + CDNs conhecidos + endpoints Supabase/Anthropic -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co https://*.supabase.in https://api.anthropic.com; frame-src 'self' blob:;">
 <title>Union 511 — Gestão de Locação</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
@@ -398,6 +400,7 @@
 <!-- App bootstrap -->
 <script type="module">
 import { requireAuth, getCurrentUser, signOut } from './js/auth.js';
+import { setState, getState } from './js/state.js'; // state global compartilhado (substitui window._*)
 import { renderTudo, mostrarToast } from './js/render.js';
 import { abrirFormContrato } from './js/forms-contrato.js';
 import { abrirFormProposta } from './js/forms-proposta.js';
@@ -482,7 +485,7 @@ document.querySelectorAll('[data-prop-filtro]').forEach(btn => {
   btn.addEventListener('click', async () => {
     document.querySelectorAll('[data-prop-filtro]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    window._propostasFiltro = btn.dataset.propFiltro;
+    setState('propostasFiltro', btn.dataset.propFiltro);
     const { renderTudo } = await import('./js/render.js');
     await renderTudo();
   });
@@ -493,7 +496,7 @@ document.querySelectorAll('[data-lead-filtro]').forEach(btn => {
   btn.addEventListener('click', async () => {
     document.querySelectorAll('[data-lead-filtro]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    window._leadsFiltro = btn.dataset.leadFiltro;
+    setState('leadsFiltro', btn.dataset.leadFiltro);
     const { renderTudo } = await import('./js/render.js');
     await renderTudo();
   });
@@ -511,19 +514,19 @@ document.getElementById('btn-mapa-fullscreen').addEventListener('click', () => {
     fs.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     // Faz o render apontar pra grid-fs também
-    window._mapaFullscreenAtivo = true;
+    setState('mapaFullscreenAtivo', true);
     renderTudo();
   });
 });
 document.getElementById('btn-mapa-fechar').addEventListener('click', async () => {
   document.getElementById('mapa-fullscreen').style.display = 'none';
   document.body.style.overflow = '';
-  window._mapaFullscreenAtivo = false;
+  setState('mapaFullscreenAtivo', false);
   const { renderTudo } = await import('./js/render.js');
   renderTudo();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && window._mapaFullscreenAtivo) {
+  if (e.key === 'Escape' && getState('mapaFullscreenAtivo')) {
     document.getElementById('btn-mapa-fechar')?.click();
   }
 });

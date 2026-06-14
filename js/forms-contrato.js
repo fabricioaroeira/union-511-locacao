@@ -3,7 +3,7 @@
 // =====================================================================
 import { getContrato, saveContrato, getInquilinos, getLojasStatus, getProposta, saveInquilino,
          getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO, getArquivos, deleteArquivo } from './data-layer.js';
-import { abrirModal, campo, lojasPicker } from './modal.js';
+import { abrirModal, campo, lojasPicker , confirmarAcao} from './modal.js';
 import { el, fmtBR, parseBR } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
 import { extrairContratoDoPDF, extrairDocumentoDoPDF } from './claude.js';
@@ -180,7 +180,7 @@ export async function abrirFormContrato(id = null, opts = {}) {
             }
           });
           row.querySelector('[data-excluir]').addEventListener('click', async function() {
-            if (!confirm('Excluir definitivamente o arquivo "' + (a.nome_original || tituloCat) + '"?\n\nEsta acao nao pode ser desfeita.')) return;
+            if (!(await confirmarAcao({ titulo: 'Excluir arquivo', mensagem: 'Excluir definitivamente o arquivo "' + (a.nome_original || tituloCat) + '"?\n\nEsta ação não pode ser desfeita.', confirmLabel: 'Excluir', perigo: true }))) return;
             try {
               await deleteArquivo(a.id, a.storage_path);
               mostrarToast('Arquivo excluido', 'success');
@@ -549,7 +549,7 @@ function renderDocsList(docs, container, abrirEditar) {
     }
     row.querySelector('[data-edit-doc]').addEventListener('click', () => abrirEditar(d));
     row.querySelector('[data-del-doc]').addEventListener('click', async () => {
-      if (!confirm('Excluir o documento "' + (TIPOS_DOCUMENTO[d.tipo] || d.tipo) + '"?')) return;
+      if (!(await confirmarAcao({ titulo: 'Excluir documento', mensagem: 'Excluir o documento "' + (TIPOS_DOCUMENTO[d.tipo] || d.tipo) + '"?', confirmLabel: 'Excluir', perigo: true }))) return;
       try {
         await deleteDocumento(d.id);
         mostrarToast('Documento excluído', 'success');

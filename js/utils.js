@@ -110,3 +110,15 @@ export const REF_RSM = {
   medio: 176.06,
   ancora: 193.40
 };
+
+// Escapa string para uso seguro em innerHTML (proteção XSS)
+// Use quando montar HTML com dados vindos do usuário (cliente_nome, observacoes, etc.)
+export function escapeHTML(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

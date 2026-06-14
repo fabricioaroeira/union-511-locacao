@@ -4,6 +4,7 @@
 // =====================================================================
 import { PLANTA_COORDS, PLANTA_VIEWBOX } from './planta-coords.js';
 import { formatMoney } from './utils.js';
+import { getState } from './state.js';
 
 const STORAGE_KEY = 'union511_planta_coords_custom';
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -38,7 +39,7 @@ let lojaSelecionadaEdicao = null;
 // =====================================================================
 export function renderPlanta(lojas, contratos, propostas) {
   // Escolhe o container baseado no modo (fullscreen ou normal)
-  const gridId = window._mapaFullscreenAtivo ? 'grid-fs' : 'grid';
+  const gridId = getState('mapaFullscreenAtivo') ? 'grid-fs' : 'grid';
   const grid = document.getElementById(gridId);
   if (!grid) return;
 
@@ -165,7 +166,7 @@ function renderToolbarEdicao(container) {
 
   if (modoEdicao) {
     document.getElementById('btn-planta-reset')?.addEventListener('click', async () => {
-      if (!confirm('Restaurar as coordenadas padrão? Vai perder os ajustes que fez.')) return;
+      if (!(await confirmarAcao({ titulo: 'Restaurar coordenadas', mensagem: 'Restaurar as coordenadas padrão? Vai perder os ajustes que fez.', confirmLabel: 'Restaurar', perigo: true }))) return;
       localStorage.removeItem(STORAGE_KEY);
       coordsAtuais = carregarCoords();
       const { renderTudo } = await import('./render.js');
