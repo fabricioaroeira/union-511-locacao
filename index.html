@@ -204,6 +204,39 @@
 <!-- Vencimentos -->
 <div class="panel" id="vencimentos">
 
+  <div class="card">
+    <h2>Linha do tempo de vencimentos contratuais</h2>
+    <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
+      Cada barra representa a duração total do contrato. A linha vermelha marca a data de hoje. Contratos &gt;= 120 meses em âmbar; parciais em violeta.
+    </div>
+    <div class="timeline-labels">
+      <div>Inquilino</div><div>Vigência</div><div>Vence em</div>
+    </div>
+    <div id="timeline-rows"></div>
+    <div class="timeline-scale" id="timeline-scale"></div>
+  </div>
+
+  <div class="card">
+    <h2>Tabela detalhada de prazos</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Inquilino</th><th>Lojas</th><th>Assinatura</th><th>Início vigência</th>
+          <th>Prazo</th><th>Término</th><th>Meses restantes</th>
+        </tr>
+      </thead>
+      <tbody id="tbl-venc"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Alertas -->
+<div class="panel" id="alertas">
+  <div class="card">
+    <h2>Alertas &amp; pendências</h2>
+    <div id="alertas-list"></div>
+  </div>
+
   <!-- Legenda: regras de notificação automática -->
   <div class="card" style="border-left:4px solid #2563eb">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -276,39 +309,6 @@
     <div style="margin-top:12px;font-size:11px;color:var(--ink-soft);font-style:italic">
       Os alertas ficam disponíveis no Chat IA — pergunte &quot;tem seguro vencendo?&quot;, &quot;quem precisa renovar?&quot; — e em breve em sininho dedicado e e-mail diário às 8h.
     </div>
-  </div>
-
-  <div class="card">
-    <h2>Linha do tempo de vencimentos contratuais</h2>
-    <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
-      Cada barra representa a duração total do contrato. A linha vermelha marca a data de hoje. Contratos &gt;= 120 meses em âmbar; parciais em violeta.
-    </div>
-    <div class="timeline-labels">
-      <div>Inquilino</div><div>Vigência</div><div>Vence em</div>
-    </div>
-    <div id="timeline-rows"></div>
-    <div class="timeline-scale" id="timeline-scale"></div>
-  </div>
-
-  <div class="card">
-    <h2>Tabela detalhada de prazos</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Inquilino</th><th>Lojas</th><th>Assinatura</th><th>Início vigência</th>
-          <th>Prazo</th><th>Término</th><th>Meses restantes</th>
-        </tr>
-      </thead>
-      <tbody id="tbl-venc"></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- Alertas -->
-<div class="panel" id="alertas">
-  <div class="card">
-    <h2>Alertas &amp; pendências</h2>
-    <div id="alertas-list"></div>
   </div>
 </div>
 
