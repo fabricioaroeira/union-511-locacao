@@ -57,11 +57,11 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 /* Tabs — pílula centralizada com fundo escuro (estilo segmented control) */
 .tabs{
   display:flex;gap:4px;margin:0 auto 24px;
-  background:#475569;                                /* slate-600 — cinza médio */
+  background:#0f172a;                                /* slate-900 — preto-azulado */
   padding:6px;
   border-radius:999px;                               /* totalmente arredondado = pílula */
   width:fit-content;flex-wrap:wrap;
-  box-shadow:0 6px 20px rgba(71, 85, 105, 0.20), 0 2px 4px rgba(71, 85, 105, 0.12);
+  box-shadow:0 6px 20px rgba(15, 23, 42, 0.18), 0 2px 4px rgba(15, 23, 42, 0.1);
   max-width:100%
 }
 .tab{
@@ -72,8 +72,8 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 }
 .tab:hover{color:#fff;background:rgba(255,255,255,0.08)}
 .tab.active{
-  background:#ffffff;color:#1e293b;font-weight:600;
-  box-shadow:0 1px 3px rgba(0,0,0,0.15)
+  background:#ffffff;color:#0f172a;font-weight:600;
+  box-shadow:0 1px 3px rgba(0,0,0,0.2)
 }
 /* Contador (ex: "Inquilinos (11)") fica com cor sutilmente diferente quando ativo */
 .tab .counter, .tab [data-counter]{opacity:0.7}
