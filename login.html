@@ -2,7 +2,10 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Login — Union 511</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
@@ -47,6 +50,14 @@
   .erro{background:var(--red-soft);color:var(--red);padding:10px 12px;border-radius:6px;font-size:13px;margin-top:14px;display:none}
   .erro.show{display:block}
   .footer{text-align:center;font-size:10px;color:var(--ink-soft);margin-top:22px;letter-spacing:0.10em;text-transform:uppercase}
+  @media (max-width: 480px){
+    body{padding:14px}
+    .login-box{padding:30px 22px;border-radius:10px}
+    .logo img{max-width:200px}
+    h1{font-size:12px;letter-spacing:0.18em}
+    input{padding:12px 14px;font-size:16px}  /* 16px evita zoom no iOS */
+    button{padding:14px;font-size:13px}
+  }
 </style>
 </head>
 <body>
