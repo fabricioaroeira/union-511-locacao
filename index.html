@@ -9,8 +9,8 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
-<meta name="theme-color" content="#2563eb">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#707272">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@200;300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./css/app.css">
 <link rel="stylesheet" href="./css/forms.css">
 </head>
@@ -18,9 +18,12 @@
 <div class="wrap">
 
 <header>
-  <div>
-    <h1>Painel de Controle — Union 511 Noroeste</h1>
-    <div class="sub">CRNW 511, Setor Noroeste, Brasília/DF · 52 lojas comerciais · 80 vagas de garagem comercial</div>
+  <div class="header-brand">
+    <img src="./imgs/logo-union511.png" alt="Union 511 Residence Mall" class="logo">
+    <div class="titles">
+      <h1>Painel de Controle</h1>
+      <div class="sub">CRNW 511, Setor Noroeste, Brasília/DF · 52 lojas · 80 vagas</div>
+    </div>
   </div>
   <div class="user-menu">
     <span class="meta">Atualizado em <strong id="today"></strong></span>
@@ -237,7 +240,7 @@
   </div>
 
   <!-- Legenda: regras de notificação automática -->
-  <div class="card" style="border-left:4px solid #2563eb">
+  <div class="card" style="border-left:4px solid var(--accent)">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <span style="font-size:22px">🔔</span>
       <h2 style="margin:0">Regras de notificação automática</h2>

@@ -1,23 +1,26 @@
 /* =====================================================================
-   UNION 511 APP — Estilos do dashboard
+   UNION 511 APP — Identidade visual do empreendimento
+   Paleta oficial: Laranja #F7A520 + Cinza #707272
    ===================================================================== */
 
 :root{
-  --bg:#f5f7fa;
+  --bg:#f7f6f3;                /* off-white quente, casa com cinza da logo */
   --card:#ffffff;
-  --ink:#1a2332;
-  --ink-soft:#5b6b80;
-  --line:#e3e8ef;
-  --accent:#2563eb;
-  --accent-soft:#dbe7ff;
-  --accent-hover:#1d4ed8;
-  --green:#16a34a;
+  --ink:#2c2c2a;               /* preto suave (Tabler c-gray 900) */
+  --ink-soft:#5f5e5a;           /* cinza médio escuro pra texto secundário */
+  --line:#e6e3db;               /* divisórias bem sutis */
+  --accent:#F7A520;             /* LARANJA OFICIAL Union 511 */
+  --accent-soft:#fef0d8;        /* laranja muito claro pra fundos */
+  --accent-hover:#d98910;       /* laranja mais escuro pra hover */
+  --brand-gray:#707272;         /* CINZA OFICIAL Union 511 (header, faixas) */
+  --brand-gray-soft:#9a9b9c;
+  --green:#15803d;
   --green-soft:#dcfce7;
-  --amber:#d97706;
+  --amber:#a16207;
   --amber-soft:#fef3c7;
-  --red:#dc2626;
+  --red:#b91c1c;
   --red-soft:#fee2e2;
-  --violet:#7c3aed;
+  --violet:#5b21b6;
   --violet-soft:#ede9fe;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -27,22 +30,34 @@ body{
 }
 .wrap{max-width:1400px;margin:0 auto}
 
-/* Header */
+/* Header — faixa cinza Union 511 com logo + linha laranja embaixo */
 header{
-  display:flex;justify-content:space-between;align-items:flex-end;
-  margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:24px;padding:16px 20px;
+  background:var(--brand-gray);
+  border-radius:8px;
+  border-bottom:3px solid var(--accent);
+  color:#fff;
+  gap:16px;flex-wrap:wrap
 }
-h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
-.sub{color:var(--ink-soft);font-size:13px;margin-top:4px}
-.meta{font-size:12px;color:var(--ink-soft);text-align:right}
+.header-brand{display:flex;align-items:center;gap:14px}
+.header-brand img.logo{height:42px;width:auto;display:block}
+.header-brand .titles h1{color:#fff;line-height:1.1}
+.header-brand .titles .sub{color:rgba(255,255,255,0.8)}
+h1{font-size:18px;font-weight:300;letter-spacing:0.18em;text-transform:uppercase;font-family:'Outfit','Inter',sans-serif}
+.sub{color:var(--ink-soft);font-size:12px;margin-top:6px;letter-spacing:0.04em}
+.meta{font-size:12px;color:rgba(255,255,255,0.85);text-align:right}
 
-.user-menu{display:flex;align-items:center;gap:8px;font-size:13px}
-.user-menu .nome{font-weight:600}
+.user-menu{display:flex;align-items:center;gap:10px;font-size:13px;color:rgba(255,255,255,0.9)}
+.user-menu .nome{font-weight:500;color:#fff;letter-spacing:0.02em}
 .user-menu button{
-  background:none;border:1px solid var(--line);color:var(--ink-soft);
-  font-family:inherit;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer
+  background:transparent;border:1px solid rgba(255,255,255,0.3);color:rgba(255,255,255,0.9);
+  font-family:inherit;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;
+  transition:background 0.15s ease,border-color 0.15s ease
 }
-.user-menu button:hover{background:var(--bg);color:var(--ink)}
+.user-menu button:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.user-menu #btn-admin{border-color:var(--accent);color:var(--accent)}
+.user-menu #btn-admin:hover{background:var(--accent);color:#fff}
 
 /* KPIs */
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px}
@@ -54,30 +69,29 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 .kpi.green .kpi-value{color:var(--green)}
 .kpi.amber .kpi-value{color:var(--amber)}
 
-/* Tabs — pílula centralizada com fundo escuro (estilo segmented control) */
+/* Tabs — pílula centralizada com fundo cinza Union 511 */
 .tabs{
   display:flex;gap:4px;margin:0 auto 24px;
-  background:#0f172a;                                /* slate-900 — preto-azulado */
+  background:var(--brand-gray);                      /* cinza Union 511 */
   padding:6px;
-  border-radius:999px;                               /* totalmente arredondado = pílula */
+  border-radius:999px;
   width:fit-content;flex-wrap:wrap;
-  box-shadow:0 6px 20px rgba(15, 23, 42, 0.18), 0 2px 4px rgba(15, 23, 42, 0.1);
+  box-shadow:0 4px 14px rgba(112, 114, 114, 0.20), 0 2px 4px rgba(112, 114, 114, 0.10);
   max-width:100%
 }
 .tab{
-  padding:9px 18px;font-size:14px;font-weight:500;background:transparent;border:none;
-  color:rgba(255,255,255,0.65);border-radius:999px;cursor:pointer;font-family:inherit;
+  padding:9px 18px;font-size:13px;font-weight:400;background:transparent;border:none;
+  color:rgba(255,255,255,0.78);border-radius:999px;cursor:pointer;font-family:inherit;
   transition:background 0.15s ease, color 0.15s ease;
-  white-space:nowrap
+  white-space:nowrap;letter-spacing:0.02em
 }
-.tab:hover{color:#fff;background:rgba(255,255,255,0.08)}
+.tab:hover{color:#fff;background:rgba(255,255,255,0.10)}
 .tab.active{
-  background:#ffffff;color:#0f172a;font-weight:600;
-  box-shadow:0 1px 3px rgba(0,0,0,0.2)
+  background:var(--accent);color:#fff;font-weight:500;
+  box-shadow:0 1px 3px rgba(0,0,0,0.20)
 }
-/* Contador (ex: "Inquilinos (11)") fica com cor sutilmente diferente quando ativo */
-.tab .counter, .tab [data-counter]{opacity:0.7}
-.tab.active .counter, .tab.active [data-counter]{opacity:1;color:var(--accent)}
+.tab .counter, .tab [data-counter]{opacity:0.8}
+.tab.active .counter, .tab.active [data-counter]{opacity:1;color:#fff}
 .panel{display:none}
 .panel.active{display:block}
 
@@ -129,15 +143,15 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 .chat-widget-trigger{
   position:relative;width:60px;height:60px;border-radius:50%;
   background:var(--accent);color:white;border:none;cursor:pointer;
-  box-shadow:0 4px 16px rgba(37,99,235,0.35);
+  box-shadow:0 4px 16px rgba(247,165,32,0.40);
   display:flex;align-items:center;justify-content:center;
   transition:transform 0.2s, box-shadow 0.2s;
 }
-.chat-widget-trigger:hover{transform:scale(1.08);box-shadow:0 6px 20px rgba(37,99,235,0.45)}
+.chat-widget-trigger:hover{transform:scale(1.08);box-shadow:0 6px 20px rgba(247,165,32,0.50)}
 .chat-widget-icon{font-size:26px;line-height:1}
 .chat-widget-pulse{
   position:absolute;top:0;left:0;width:100%;height:100%;
-  border-radius:50%;background:var(--accent);opacity:0.6;
+  border-radius:50%;background:var(--accent);opacity:0.5;
   animation:chat-pulse 2s ease-out infinite;pointer-events:none
 }
 @keyframes chat-pulse{
@@ -159,8 +173,9 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
 .chat-widget.aberto .chat-widget-trigger .chat-widget-pulse{display:none}
 .chat-widget.aberto .chat-widget-icon{transform:rotate(45deg);transition:transform 0.2s}
 .chat-widget-header{
-  padding:14px 16px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:white;
-  display:flex;justify-content:space-between;align-items:center;gap:8px
+  padding:14px 16px;background:var(--brand-gray);color:white;
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  border-bottom:2px solid var(--accent)
 }
 .chat-widget-titulo{display:flex;align-items:center;gap:10px}
 .chat-widget-avatar{
@@ -213,7 +228,7 @@ h1{font-size:22px;font-weight:700;letter-spacing:-0.02em}
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
   transition:background 0.15s
 }
-#chat-widget-enviar:hover{background:#1d4ed8}
+#chat-widget-enviar:hover{background:var(--accent-hover)}
 #chat-widget-enviar:disabled{background:#94a3b8;cursor:not-allowed}
 @media (max-width: 600px){
   .chat-widget-painel{width:calc(100vw - 20px);bottom:75px;right:-10px;height:70vh}
