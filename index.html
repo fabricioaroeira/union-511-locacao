@@ -25,6 +25,7 @@
   <div class="user-menu">
     <span class="meta">Atualizado em <strong id="today"></strong></span>
     <span class="nome" id="user-nome">—</span>
+    <button id="btn-admin" title="Administração de usuários" style="display:none">⚙️ Admin</button>
     <button id="btn-logout">Sair</button>
   </div>
 </header>
@@ -370,6 +371,8 @@ import { abrirFormLead } from './js/forms-lead.js';
 import { abrirFormDespesa, abrirFormFornecedor } from './js/forms-financeiro.js';
 import { renderFinanceiro, setFinSubtab, setFinMes } from './js/financeiro-view.js';
 import { initChatWidget } from './js/chat-widget.js';
+import { abrirAdminUsuarios } from './js/forms-admin.js';
+import { getMeuPapel } from './js/data-layer.js';
 
 // 1. Verifica autenticação
 await requireAuth();
@@ -384,6 +387,18 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
   await signOut();
   window.location.href = './login.html';
 });
+
+// 3.1 Mostrar botão Admin só se o usuário for admin
+(async () => {
+  try {
+    const papel = await getMeuPapel();
+    if (papel === 'admin') {
+      const btnAdmin = document.getElementById('btn-admin');
+      btnAdmin.style.display = '';
+      btnAdmin.addEventListener('click', () => abrirAdminUsuarios());
+    }
+  } catch (e) { /* fail silently — usuário sem papel não vê admin */ }
+})();
 
 // 4. Tabs
 document.querySelectorAll('.tab').forEach(tab => {

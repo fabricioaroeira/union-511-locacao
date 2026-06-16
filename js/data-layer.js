@@ -910,3 +910,59 @@ export async function deleteDocumento(id) {
   const { error } = await supa.from('documentos_contrato').delete().eq('id', id);
   if (error) throw new Error('Erro ao excluir documento: ' + error.message);
 }
+
+// =====================================================================
+// ADMINISTRAÇÃO DE USUÁRIOS (papéis) — apenas admin
+// =====================================================================
+
+// Papel do usuário logado atualmente
+export async function getMeuPapel() {
+  if (MOCK_MODE) return 'admin';
+  const supa = await getSupabase();
+  const { data, error } = await supa.rpc('user_role');
+  if (error) return null;
+  return data;
+}
+
+// Lista todos os usuários (perfis + email/last_sign_in vindo de auth.users via view)
+// Como auth.users não é acessível diretamente via PostgREST, usamos a tabela perfis
+// + email/last_sign_in_at que o admin consulta via RPC
+export async function getUsuarios() {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  // Busca perfis (com RLS já filtrando apenas o que admin pode ver = todos)
+  const { data: perfis, error } = await supa.from('perfis')
+    .select('user_id, role, nome, ativo, created_at, updated_at')
+    .order('created_at');
+  if (error) throw new Error('Erro ao buscar perfis: ' + error.message);
+  // Tenta enriquecer com email + last_sign_in_at via RPC opcional
+  // Se a RPC não existir, devolve só os perfis (email vazio)
+  let usuariosAuth = [];
+  try {
+    const { data: rpcData } = await supa.rpc('get_users_admin');
+    if (Array.isArray(rpcData)) usuariosAuth = rpcData;
+  } catch (e) { /* RPC opcional */ }
+  const mapAuth = {};
+  usuariosAuth.forEach(u => { mapAuth[u.user_id || u.id] = u; });
+  return (perfis || []).map(p => ({
+    ...p,
+    email: mapAuth[p.user_id]?.email || '',
+    last_sign_in_at: mapAuth[p.user_id]?.last_sign_in_at || null
+  }));
+}
+
+// Atualiza o papel de um usuário (só admin via policy perfis_update_admin)
+export async function atualizarPapelUsuario(userId, novoPapel) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('perfis').update({ role: novoPapel }).eq('user_id', userId);
+  if (error) throw new Error('Erro ao atualizar papel: ' + error.message);
+}
+
+// Ativa/desativa usuário (sem deletar a conta no Supabase Auth)
+export async function atualizarAtivoUsuario(userId, ativo) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('perfis').update({ ativo }).eq('user_id', userId);
+  if (error) throw new Error('Erro ao atualizar status: ' + error.message);
+}
