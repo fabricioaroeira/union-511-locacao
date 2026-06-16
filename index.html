@@ -40,8 +40,6 @@
   <button class="tab" data-panel="financeiro">Financeiro</button>
   <button class="tab" data-panel="vencimentos">Vencimentos/Renovações</button>
   <button class="tab" data-panel="alertas">Alertas/Pendências</button>
-  <button class="tab" data-panel="chat-ia">💬 Chat IA</button>
-  <button class="tab" data-panel="principios">Princípios</button>
 </div>
 
 <!-- Banner de alertas (renderizado dinamicamente; só aparece se houver pendências) -->
@@ -312,44 +310,6 @@
   </div>
 </div>
 
-<!-- Chat IA -->
-<div class="panel" id="chat-ia">
-  <!-- Conteúdo gerado dinamicamente por js/chat.js -->
-</div>
-
-<!-- Princípios -->
-<div class="panel" id="principios">
-  <div class="card">
-    <h2>Regras estruturais &amp; princípios</h2>
-    <div class="principles">
-      <div class="principle">
-        <div class="principle-title">Carência dentro do ano 1</div>
-        <div class="principle-body">3 meses de carência sempre dentro do ano contratual 1 → ano 1 = 9 meses pagos (meses 4–12).</div>
-      </div>
-      <div class="principle">
-        <div class="principle-title">IGP-M desde o ano 1 (padrão Union 511)</div>
-        <div class="principle-body">Correção IGP-M aplicada em todos os valores. Exceções: Pague Menos e Drogaria Brasil usam IPCA.</div>
-      </div>
-      <div class="principle">
-        <div class="principle-title">Benchmark interno</div>
-        <div class="principle-body">Toda comparação de R$/m² deve ser feita contra contratos efetivos do Union 511. Estimativas genéricas não substituem dados internos.</div>
-      </div>
-      <div class="principle">
-        <div class="principle-title">Garantia &amp; contratante PJ</div>
-        <div class="principle-body">Fiador é o elo mais frágil. Sempre que possível, contrato sob PJ. Tipos no portfólio: Fiança PJ, Fiança Pessoal, Seguro Fiança, Título de Capitalização, Sem garantia.</div>
-      </div>
-      <div class="principle">
-        <div class="principle-title">Documentos externos</div>
-        <div class="principle-body">Para distribuição externa, sem nome interno — usar "Locadora" ou "Union 511 Noroeste". Locadora real: JAX 28 Empreendimentos Imobiliários Ltda.</div>
-      </div>
-      <div class="principle">
-        <div class="principle-title">Entregas em múltiplos formatos</div>
-        <div class="principle-body">Fonte editável (Word/Excel) + PDF para entrega. Conversão via LibreOffice. Contratos assinados via D4Sign.</div>
-      </div>
-    </div>
-  </div>
-</div>
-
 </div>
 
 <!-- Modal full-screen pra mapa -->
@@ -409,7 +369,6 @@ import { abrirFormAreasLojas } from './js/forms-lojas.js';
 import { abrirFormLead } from './js/forms-lead.js';
 import { abrirFormDespesa, abrirFormFornecedor } from './js/forms-financeiro.js';
 import { renderFinanceiro, setFinSubtab, setFinMes } from './js/financeiro-view.js';
-import { initChat } from './js/chat.js';
 import { initChatWidget } from './js/chat-widget.js';
 
 // 1. Verifica autenticação
@@ -433,7 +392,6 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(tab.dataset.panel).classList.add('active');
-    if (tab.dataset.panel === 'chat-ia') initChat();
     if (tab.dataset.panel === 'financeiro') renderFinanceiro();
   });
 });
