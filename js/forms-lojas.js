@@ -52,9 +52,9 @@ export async function abrirFormAreasLojas() {
     inputs[l.codigo] = { priv: inpPriv, total: inpTotal };
 
     let statusBadge = '';
-    if (l.uso_interno) statusBadge = '<span style="color:#475569;font-size:11px">Uso interno</span>';
-    else if (l.status === 'ocupada') statusBadge = '<span style="color:#16a34a;font-size:11px">Ocupada</span>';
-    else if (l.status === 'proposta_analise') statusBadge = '<span style="color:#d97706;font-size:11px">Proposta análise</span>';
+    if (l.uso_interno) statusBadge = '<span style="color:#475569;font-size:11px">Bloqueada</span>';
+    else if (l.status === 'ocupada') statusBadge = '<span style="color:#16a34a;font-size:11px">Locada</span>';
+    else if (l.status === 'proposta_analise') statusBadge = '<span style="color:#d97706;font-size:11px">Proposta em análise</span>';
     else if (l.status === 'proposta_aceita') statusBadge = '<span style="color:#2563eb;font-size:11px">Proposta aceita</span>';
     else statusBadge = '<span style="color:#94a3b8;font-size:11px">Disponível</span>';
 

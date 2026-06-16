@@ -117,12 +117,12 @@ function renderLegenda(k, propostas) {
   const pAnalise = propostas.filter(p => p.status === 'em_analise').reduce((s,p)=>s+(p.lojas?.length||0),0);
   const livres = disp - pAceitas - pAnalise;
   document.getElementById('legend').innerHTML = `
-    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Ocupada (${k.lojas_ocupadas})</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#c2410c"></div>Parcial</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#1e3a8a"></div>Proposta aceita (${pAceitas})</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div>Proposta em análise (${pAnalise})</div>
-    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Disponível (${livres})</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#1a2332"></div>Uso interno (${k.lojas_internas})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Locada (${k.lojas_ocupadas})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#c2410c"></div>Parcialmente Locada</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1e3a8a"></div>Proposta de Locação Aceita (${pAceitas})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div>Proposta de Locação em Análise (${pAnalise})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Lojas Disponíveis (${livres})</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1a2332"></div>Lojas Bloqueadas (${k.lojas_internas})</div>
   `;
 }
 
@@ -180,7 +180,7 @@ async function renderTabelaOcupadas(contratos, lojas) {
   for (let i = 0; i < sorted.length; i++) {
     const c = sorted[i];
     const [arquivos, documentos] = arqsPorContrato[i];
-    const status = c.parcial ? '<span class="badge parcial">Parcial</span>' : '<span class="badge ocupada">Ocupada</span>';
+    const status = c.parcial ? '<span class="badge parcial">Parcialmente locada</span>' : '<span class="badge ocupada">Locada</span>';
     const termino = c.data_termino || fmtBR(addMonths(parseBR(c.data_inicio), c.prazo_meses));
     const totalDocs = (arquivos?.length || 0) + (documentos?.length || 0);
     const btnDocs = totalDocs > 0
