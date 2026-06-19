@@ -725,7 +725,68 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
   grid.appendChild(campo({ name: 'doc_descricao', label: 'Descrição (opcional)', value: doc?.descricao || '', full: true }));
   grid.appendChild(campo({ name: 'doc_emissao', label: 'Data de emissão', type: 'date', value: doc?.data_emissao || '' }));
   grid.appendChild(campo({ name: 'doc_validade', label: 'Data de validade', type: 'date', value: doc?.data_validade || '', required: true }));
-  grid.appendChild(campo({ name: 'doc_obs', label: 'Observações', type: 'textarea', value: doc?.observacoes || '', full: true, 
+  grid.appendChild(campo({ name: 'doc_obs', label: 'Observações', type: 'textarea', value: doc?.observacoes || '', full: true, rows: 2 }));
+  box.appendChild(grid);
+
+  const acoes = el('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' } });
+  const btnSalvar = el('button', { type: 'button', className: 'btn sm' }, doc ? 'Salvar alterações' : 'Adicionar documento');
+  const btnCancelar = el('button', { type: 'button', className: 'btn ghost sm' }, 'Cancelar');
+  acoes.appendChild(btnCancelar);
+  acoes.appendChild(btnSalvar);
+  box.appendChild(acoes);
+
+  btnCancelar.addEventListener('click', () => onSalvarOuCancelar());
+  btnSalvar.addEventListener('click', async () => {
+    btnSalvar.disabled = true;
+    btnSalvar.textContent = 'Salvando...';
+    try {
+      const tipo = box.querySelector('[name=doc_tipo]').value;
+      const numero = box.querySelector('[name=doc_numero]').value;
+      const descricao = box.querySelector('[name=doc_descricao]').value;
+      const emissao = box.querySelector('[name=doc_emissao]').value;
+      const validade = box.querySelector('[name=doc_validade]').value;
+      const obs = box.querySelector('[name=doc_obs]').value;
+      if (!validade) throw new Error('Data de validade é obrigatória');
+      const payload = {
+        contrato_id: contratoId,
+        tipo,
+        numero: numero || null,
+        descricao: descricao || null,
+        data_emissao: emissao || null,
+        data_validade: validade,
+        observacoes: obs || null
+      };
+      if (doc?.id) payload.id = doc.id;
+      // 1. Salva o documento (gera ID se for novo)
+      const docSalvo = await saveDocumento(payload);
+      // 2. Se tem arquivo anexado, faz upload e atualiza arquivo_url
+      if (box._fileParaUpload && docSalvo?.id) {
+        try {
+          const arquivo = await uploadArquivo(box._fileParaUpload, {
+            entidade_tipo: 'contrato',
+            entidade_id: contratoId,
+            categoria: 'outro'
+          });
+          if (arquivo?.storage_path) {
+            await saveDocumento({ id: docSalvo.id, arquivo_url: arquivo.storage_path });
+          }
+        } catch (err) {
+          console.error('Falha no upload do arquivo:', err);
+          mostrarToast('Documento salvo mas upload falhou: ' + err.message, 'error');
+        }
+      }
+      mostrarToast(doc ? 'Documento atualizado' : 'Documento adicionado', 'success');
+      onSalvarOuCancelar();
+    } catch (err) {
+      mostrarToast('Erro ao salvar: ' + err.message, 'error');
+      btnSalvar.disabled = false;
+      btnSalvar.textContent = doc ? 'Salvar alterações' : 'Adicionar documento';
+    }
+  });
+
+  return box;
+}
+
 // =====================================================================
 // Painel de GESTÕES — itens gestionáveis identificados pela IA
 // =====================================================================
