@@ -864,6 +864,7 @@ function renderGestoesPainel(gestoes, container, btnAba, contratoId) {
     '<div style="font-size:11px;opacity:.7">Identificadas por IA a partir do contrato</div>';
   container.appendChild(header);
 
+
   // Lista de gestões
   const lista = el('div');
   gestoes.forEach(g => {
@@ -875,7 +876,7 @@ function renderGestoesPainel(gestoes, container, btnAba, contratoId) {
       '<div class="gicon">' + info.icone + '</div>' +
       '<div>' +
         '<div class="gtitulo">' + escapeHtml(g.titulo) +
-          '<span class="gbadge" style="background:' + info.bg + ';color:' + info.cor + ';margin-left:8px">' + info.label + '</span>' +
+          '<span class="gbadge" style="background:' + info.bg + ';color:' + info.cor + '">' + info.label + '</span>' +
         '</div>' +
         '<div class="gdesc">' + escapeHtml(g.descricao || '') + '</div>' +
         (g.clausula_origem ? '<div class="gclausula">📑 ' + escapeHtml(g.clausula_origem) + '</div>' : '') +
@@ -884,9 +885,9 @@ function renderGestoesPainel(gestoes, container, btnAba, contratoId) {
         '<div class="gdata-data">' + formatarData(g.data_evento) + '</div>' +
         '<div class="gdata-rec">' + rotuloRecorrencia(g.recorrencia) + '</div>' +
         (g.data_evento ? '<div class="gbadge" style="background:' + urg.bg + ';color:' + urg.cor + '">' + urg.label + '</div>' : '') +
-        '<div style="margin-top:6px"><label style="font-size:10px;color:var(--ink-soft);cursor:pointer">' +
-          '<input type="checkbox" data-toggle-ativo ' + (g.ativo ? 'checked' : '') + ' style="vertical-align:middle"> ativa' +
-        '</label></div>' +
+        '<label class="gtoggle">' +
+          '<input type="checkbox" data-toggle-ativo ' + (g.ativo ? 'checked' : '') + '> ativa' +
+        '</label>' +
       '</div>';
 
     card.querySelector('[data-toggle-ativo]').addEventListener('change', async (ev) => {
