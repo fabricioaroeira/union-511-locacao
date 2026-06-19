@@ -2,7 +2,8 @@
 // Formulário de criar/editar contrato
 // =====================================================================
 import { getContrato, saveContrato, getInquilinos, getLojasStatus, getProposta, saveInquilino,
-         getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO, getArquivos, deleteArquivo } from './data-layer.js';
+         getDocumentosByContrato, saveDocumento, deleteDocumento, TIPOS_DOCUMENTO, getArquivos, deleteArquivo,
+         getGestoesPorContrato, atualizarGestaoAtivo, marcarGestaoExecutada } from './data-layer.js';
 import { abrirModal, campo, lojasPicker , confirmarAcao} from './modal.js';
 import { el, fmtBR, parseBR } from './utils.js';
 import { renderTudo, mostrarToast } from './render.js';
@@ -342,6 +343,63 @@ export async function abrirFormContrato(id = null, opts = {}) {
     }, 100);
   }
 
+  // ============================================================
+  // Sistema de abas (só ao editar contrato existente)
+  // Aba 1: Dados do contrato (form atual)
+  // Aba 2: Gestões (itens gestionáveis do contrato)
+  // ============================================================
+  if (id) {
+    const childrenAtuais = Array.from(body.children);
+    const panelDados = el('div');
+    childrenAtuais.forEach(c => panelDados.appendChild(c));
+
+    const panelGestoes = el('div');
+    panelGestoes.style.display = 'none';
+    panelGestoes.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);font-size:13px">⏳ Carregando gestões...</div>';
+
+    const tabBar = el('div', { className: 'contrato-tabs' });
+    const btnAbaDados = el('button', { type: 'button', className: 'contrato-tab active' }, 'Dados do contrato');
+    const btnAbaGestoes = el('button', { type: 'button', className: 'contrato-tab' });
+    btnAbaGestoes.innerHTML = 'Gestões<span class="badge" data-gestoes-count>·</span>';
+    tabBar.appendChild(btnAbaDados);
+    tabBar.appendChild(btnAbaGestoes);
+
+    body.innerHTML = '';
+    body.appendChild(tabBar);
+    body.appendChild(panelDados);
+    body.appendChild(panelGestoes);
+
+    btnAbaDados.addEventListener('click', () => {
+      btnAbaDados.classList.add('active');
+      btnAbaGestoes.classList.remove('active');
+      panelDados.style.display = '';
+      panelGestoes.style.display = 'none';
+    });
+
+    let gestoesCarregadas = false;
+    btnAbaGestoes.addEventListener('click', async () => {
+      btnAbaGestoes.classList.add('active');
+      btnAbaDados.classList.remove('active');
+      panelDados.style.display = 'none';
+      panelGestoes.style.display = '';
+      if (!gestoesCarregadas) {
+        gestoesCarregadas = true;
+        try {
+          const gestoes = await getGestoesPorContrato(id);
+          renderGestoesPainel(gestoes, panelGestoes, btnAbaGestoes, id);
+        } catch (err) {
+          panelGestoes.innerHTML = '<div style="padding:20px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:13px">⚠️ Erro ao carregar gestões: ' + err.message + '</div>';
+        }
+      }
+    });
+
+    // Pré-carrega contagem de gestões pro badge da aba
+    getGestoesPorContrato(id).then(gs => {
+      const c = btnAbaGestoes.querySelector('[data-gestoes-count]');
+      if (c) c.textContent = String((gs || []).filter(g => g.ativo).length);
+    }).catch(() => {});
+  }
+
   abrirModal({
     titulo: id ? 'Editar contrato' : (opts.fromProposta ? 'Converter proposta em contrato' : 'Novo contrato'),
     body,
@@ -667,64 +725,138 @@ function renderDocForm(contratoId, doc, onSalvarOuCancelar) {
   grid.appendChild(campo({ name: 'doc_descricao', label: 'Descrição (opcional)', value: doc?.descricao || '', full: true }));
   grid.appendChild(campo({ name: 'doc_emissao', label: 'Data de emissão', type: 'date', value: doc?.data_emissao || '' }));
   grid.appendChild(campo({ name: 'doc_validade', label: 'Data de validade', type: 'date', value: doc?.data_validade || '', required: true }));
-  grid.appendChild(campo({ name: 'doc_obs', label: 'Observações', type: 'textarea', value: doc?.observacoes || '', full: true, rows: 2 }));
-  box.appendChild(grid);
+  grid.appendChild(campo({ name: 'doc_obs', label: 'Observações', type: 'textarea', value: doc?.observacoes || '', full: true, 
+// =====================================================================
+// Painel de GESTÕES — itens gestionáveis identificados pela IA
+// =====================================================================
 
-  const acoes = el('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' } });
-  const btnSalvar = el('button', { type: 'button', className: 'btn sm' }, doc ? 'Salvar alterações' : 'Adicionar documento');
-  const btnCancelar = el('button', { type: 'button', className: 'btn ghost sm' }, 'Cancelar');
-  acoes.appendChild(btnCancelar);
-  acoes.appendChild(btnSalvar);
-  box.appendChild(acoes);
+// Mapeia tipo → ícone + cor de badge
+const TIPO_GESTAO_INFO = {
+  carencia_fim:           { icone: '⏳', cor: '#7c3aed', bg: '#f3e8ff', label: 'Carência' },
+  reajuste_aniversario:   { icone: '📈', cor: '#0891b2', bg: '#cffafe', label: 'Reajuste' },
+  marco_5anos:            { icone: '⚖️', cor: '#7c2d12', bg: '#fed7aa', label: 'Lei 8.245' },
+  aviso_devolucao:        { icone: '📤', cor: '#c2410c', bg: '#ffedd5', label: 'Devolução' },
+  termino:                { icone: '🏁', cor: '#dc2626', bg: '#fee2e2', label: 'Término' },
+  garantia_pendencia:     { icone: '🛡️', cor: '#9a3412', bg: '#ffedd5', label: 'Garantia' },
+  validacao_fianca:       { icone: '🔍', cor: '#0e7490', bg: '#cffafe', label: 'Fiança' },
+  comprovantes:           { icone: '🧾', cor: '#15803d', bg: '#dcfce7', label: 'Encargos' },
+  vistoria:               { icone: '🔧', cor: '#0f766e', bg: '#ccfbf1', label: 'Vistoria' },
+  seguro:                 { icone: '🔥', cor: '#b91c1c', bg: '#fee2e2', label: 'Seguro' },
+  destinacao:             { icone: '📋', cor: '#475569', bg: '#f1f5f9', label: 'Informativo' }
+};
 
-  btnCancelar.addEventListener('click', () => onSalvarOuCancelar());
-  btnSalvar.addEventListener('click', async () => {
-    btnSalvar.disabled = true;
-    btnSalvar.textContent = 'Salvando...';
-    try {
-      const tipo = box.querySelector('[name=doc_tipo]').value;
-      const numero = box.querySelector('[name=doc_numero]').value;
-      const descricao = box.querySelector('[name=doc_descricao]').value;
-      const emissao = box.querySelector('[name=doc_emissao]').value;
-      const validade = box.querySelector('[name=doc_validade]').value;
-      const obs = box.querySelector('[name=doc_obs]').value;
-      if (!validade) throw new Error('Data de validade é obrigatória');
-      const payload = {
-        contrato_id: contratoId,
-        tipo,
-        numero: numero || null,
-        descricao: descricao || null,
-        data_emissao: emissao || null,
-        data_validade: validade,
-        observacoes: obs || null
-      };
-      if (doc?.id) payload.id = doc.id;
-      // 1. Salva o documento (gera ID se for novo)
-      const docSalvo = await saveDocumento(payload);
-      // 2. Se tem arquivo anexado, faz upload e atualiza arquivo_url
-      if (box._fileParaUpload && docSalvo?.id) {
-        try {
-          const arquivo = await uploadArquivo(box._fileParaUpload, {
-            entidade_tipo: 'contrato',
-            entidade_id: contratoId,
-            categoria: 'outro'
-          });
-          if (arquivo?.storage_path) {
-            await saveDocumento({ id: docSalvo.id, arquivo_url: arquivo.storage_path });
-          }
-        } catch (err) {
-          console.error('Falha no upload do arquivo:', err);
-          mostrarToast('Documento salvo mas upload falhou: ' + err.message, 'error');
-        }
+function calcularUrgencia(dataEvento) {
+  if (!dataEvento) return { cor: '#475569', bg: '#f1f5f9', label: 'Sem data' };
+  const d = new Date(dataEvento);
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+  const dias = Math.floor((d - hoje) / 86400000);
+  if (dias < 0)    return { cor: '#7f1d1d', bg: '#fef2f2', label: 'Atrasado ' + Math.abs(dias) + 'd' };
+  if (dias === 0)  return { cor: '#dc2626', bg: '#fef2f2', label: 'HOJE' };
+  if (dias <= 30)  return { cor: '#dc2626', bg: '#fef2f2', label: 'Em ' + dias + 'd' };
+  if (dias <= 90)  return { cor: '#ea580c', bg: '#fff7ed', label: 'Em ' + dias + 'd' };
+  if (dias <= 180) return { cor: '#ca8a04', bg: '#fefce8', label: 'Em ' + dias + 'd' };
+  return { cor: '#16a34a', bg: '#f0fdf4', label: 'Em ' + dias + 'd' };
+}
+
+function formatarData(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR');
+}
+
+function rotuloRecorrencia(rec) {
+  const m = {
+    one_off: 'Único',
+    anual: 'Anual',
+    semestral: 'Semestral',
+    mensal: 'Mensal',
+    manual_recorrente: 'Check periódico',
+    informativo: 'Regra informativa'
+  };
+  return m[rec] || rec;
+}
+
+function renderGestoesPainel(gestoes, container, btnAba, contratoId) {
+  container.innerHTML = '';
+
+  if (!gestoes || gestoes.length === 0) {
+    container.innerHTML =
+      '<div style="padding:30px;text-align:center;background:#f8fafc;border:1px dashed var(--line);border-radius:8px">' +
+      '<div style="font-size:32px;margin-bottom:10px">🤖</div>' +
+      '<div style="font-weight:600;color:var(--ink);margin-bottom:6px">Nenhuma gestão cadastrada ainda</div>' +
+      '<div style="font-size:12px;color:var(--ink-soft)">Em breve: botão para analisar o contrato anexado com IA e gerar gestões automaticamente.</div>' +
+      '</div>';
+    return;
+  }
+
+  // Header com resumo
+  const ativas = gestoes.filter(g => g.ativo);
+  const proximas = ativas
+    .filter(g => g.data_evento)
+    .filter(g => new Date(g.data_evento) >= new Date(new Date().setHours(0,0,0,0)));
+  const header = el('div', { className: 'gestoes-header' });
+  header.innerHTML =
+    '<div>📋 <strong>' + ativas.length + ' gestões ativas</strong>' +
+    (proximas.length > 0 ? ' · próxima em ' + formatarData(proximas[0].data_evento) : '') +
+    '</div>' +
+    '<div style="font-size:11px;opacity:.7">Identificadas por IA a partir do contrato</div>';
+  container.appendChild(header);
+
+  // Lista de gestões
+  const lista = el('div');
+  gestoes.forEach(g => {
+    const info = TIPO_GESTAO_INFO[g.tipo] || { icone: '📌', cor: '#475569', bg: '#f1f5f9', label: g.tipo };
+    const urg = calcularUrgencia(g.data_evento);
+
+    const card = el('div', { className: 'gestao-card' + (g.ativo ? '' : ' inativa') });
+    card.innerHTML =
+      '<div class="gicon">' + info.icone + '</div>' +
+      '<div>' +
+        '<div class="gtitulo">' + escapeHtml(g.titulo) +
+          '<span class="gbadge" style="background:' + info.bg + ';color:' + info.cor + ';margin-left:8px">' + info.label + '</span>' +
+        '</div>' +
+        '<div class="gdesc">' + escapeHtml(g.descricao || '') + '</div>' +
+        (g.clausula_origem ? '<div class="gclausula">📑 ' + escapeHtml(g.clausula_origem) + '</div>' : '') +
+      '</div>' +
+      '<div class="gdata">' +
+        '<div class="gdata-data">' + formatarData(g.data_evento) + '</div>' +
+        '<div class="gdata-rec">' + rotuloRecorrencia(g.recorrencia) + '</div>' +
+        (g.data_evento ? '<div class="gbadge" style="background:' + urg.bg + ';color:' + urg.cor + '">' + urg.label + '</div>' : '') +
+        '<div style="margin-top:6px"><label style="font-size:10px;color:var(--ink-soft);cursor:pointer">' +
+          '<input type="checkbox" data-toggle-ativo ' + (g.ativo ? 'checked' : '') + ' style="vertical-align:middle"> ativa' +
+        '</label></div>' +
+      '</div>';
+
+    card.querySelector('[data-toggle-ativo]').addEventListener('change', async (ev) => {
+      const novoAtivo = ev.target.checked;
+      try {
+        await atualizarGestaoAtivo(g.id, novoAtivo);
+        card.classList.toggle('inativa', !novoAtivo);
+        g.ativo = novoAtivo;
+        // Atualiza contador na aba
+        const c = btnAba.querySelector('[data-gestoes-count]');
+        if (c) c.textContent = String(gestoes.filter(x => x.ativo).length);
+        mostrarToast(novoAtivo ? 'Gestão reativada' : 'Gestão desativada', 'success');
+      } catch (err) {
+        ev.target.checked = !novoAtivo;
+        mostrarToast('Erro: ' + err.message, 'error');
       }
-      mostrarToast(doc ? 'Documento atualizado' : 'Documento adicionado', 'success');
-      onSalvarOuCancelar();
-    } catch (err) {
-      mostrarToast('Erro ao salvar: ' + err.message, 'error');
-      btnSalvar.disabled = false;
-      btnSalvar.textContent = doc ? 'Salvar alterações' : 'Adicionar documento';
-    }
-  });
+    });
 
-  return box;
+    lista.appendChild(card);
+  });
+  container.appendChild(lista);
+
+  // Rodapé com nota sobre o próximo passo
+  const footer = el('div', {
+    style: { marginTop: '14px', padding: '10px 14px', fontSize: '11px', color: 'var(--ink-soft)', background: '#f8fafc', borderRadius: '6px', textAlign: 'center' }
+  });
+  footer.innerHTML = '💡 Próximas fases: alertas automáticos no painel principal + sincronização com Google Agenda + análise IA para os outros contratos.';
+  container.appendChild(footer);
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }

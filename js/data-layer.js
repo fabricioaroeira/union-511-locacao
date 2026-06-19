@@ -912,6 +912,42 @@ export async function deleteDocumento(id) {
 }
 
 // =====================================================================
+// GESTÕES DO CONTRATO — itens gestionáveis extraídos pelo IA
+// =====================================================================
+
+// Lista todas as gestões de um contrato, ordenadas por data de evento
+export async function getGestoesPorContrato(contratoId) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa
+    .from('gestoes_contrato')
+    .select('*')
+    .eq('contrato_id', contratoId)
+    .order('data_evento', { ascending: true, nullsFirst: false });
+  if (error) throw new Error('Erro ao carregar gestões: ' + error.message);
+  return data || [];
+}
+
+// Toggle ativo/inativo de uma gestão
+export async function atualizarGestaoAtivo(gestaoId, ativo) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('gestoes_contrato')
+    .update({ ativo }).eq('id', gestaoId);
+  if (error) throw new Error('Erro ao atualizar gestão: ' + error.message);
+}
+
+// Marca uma gestão como executada (registra última_acao)
+export async function marcarGestaoExecutada(gestaoId) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('gestoes_contrato')
+    .update({ status: 'executado', ultima_acao_em: new Date().toISOString() })
+    .eq('id', gestaoId);
+  if (error) throw new Error('Erro ao marcar gestão: ' + error.message);
+}
+
+// =====================================================================
 // ADMINISTRAÇÃO DE USUÁRIOS (papéis) — apenas admin
 // =====================================================================
 
