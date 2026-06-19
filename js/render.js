@@ -3,7 +3,8 @@
 // =====================================================================
 import {
   getKPIs, getLojasStatus, getInquilinos, getContratos, getPropostas, getArquivos, encerrarContrato, getLeads,
-  getDocumentosByContrato, TIPOS_DOCUMENTO
+  getDocumentosByContrato, TIPOS_DOCUMENTO,
+  getGestoesAtivas
 } from './data-layer.js';
 import { getArquivoUrl } from './upload.js';
 import { abrirModal , promptCustom} from './modal.js';
@@ -33,15 +34,16 @@ export function mostrarToast(msg, tipo = 'success') {
 // ---------------------------------------------------------------------
 export async function renderTudo() {
   const filtroProp = getState('propostasFiltro');
-  const [kpis, lojas, inquilinos, contratos, propostasAtivas, propostasFiltro, leads] = await Promise.all([
+  const [kpis, lojas, inquilinos, contratos, propostasAtivas, propostasFiltro, leads, gestoes] = await Promise.all([
     getKPIs(), getLojasStatus(), getInquilinos(), getContratos('ativo'),
     getPropostas('ativas'),  // pra mapa, KPIs e legenda
     getPropostas(filtroProp), // pra aba propostas
-    getLeads('todos').catch(() => [])
+    getLeads('todos').catch(() => []),
+    getGestoesAtivas().catch(() => [])
   ]);
   const propostas = propostasAtivas; // alias pra renders que usam propostas ativas
   const safe = (fn, nome) => { try { return fn(); } catch (e) { console.error('render error em ' + nome + ':', e); } };
-  safe(() => renderBannerAlertas(contratos, propostas, leads), 'renderBannerAlertas');
+  safe(() => renderBannerAlertas(contratos, propostas, leads, gestoes), 'renderBannerAlertas');
   safe(() => renderKpis(kpis), 'renderKpis');
   safe(() => renderFunilComercial(leads, propostas, contratos), 'renderFunilComercial');
   safe(() => renderPlanta(lojas, contratos, propostas), 'renderPlanta');
@@ -55,7 +57,7 @@ export async function renderTudo() {
   safe(() => renderLeads(leads), 'renderLeads');
   safe(() => renderTimeline(contratos), 'renderTimeline');
   safe(() => renderTabelaVencimentos(contratos), 'renderTabelaVencimentos');
-  safe(() => renderAlertas(propostas, contratos), 'renderAlertas');
+  safe(() => renderAlertas(propostas, contratos, gestoes), 'renderAlertas');
   safe(() => renderCounters(kpis, propostas, leads), 'renderCounters');
 }
 
@@ -547,9 +549,14 @@ function renderTabelaVencimentos(contratos) {
 // ---------------------------------------------------------------------
 // Alertas
 // ---------------------------------------------------------------------
-function renderAlertas(propostas, contratos) {
+function renderAlertas(propostas, contratos, gestoes = []) {
   const list = document.getElementById('alertas-list');
   list.innerHTML = '';
+
+  // ============================================================
+  // SEÇÃO 1: GESTÕES DE CONTRATO (geradas pela IA)
+  // ============================================================
+  renderSecaoGestoes(list, gestoes, contratos);
 
   // Alertas dinâmicos por proposta
   propostas.forEach(p => {
@@ -589,12 +596,124 @@ function renderAlertas(propostas, contratos) {
 // ---------------------------------------------------------------------
 // Banner de alertas (Action-first)
 // ---------------------------------------------------------------------
-function renderBannerAlertas(contratos, propostas, leads) {
+// ---------------------------------------------------------------------
+// Seção de gestões dentro da aba Alertas/Pendências
+// ---------------------------------------------------------------------
+function renderSecaoGestoes(container, gestoes, contratos) {
+  if (!gestoes || gestoes.length === 0) return;
+
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+  // Classifica por urgência
+  const grupos = { atrasadas: [], em30: [], em90: [] };
+  gestoes.forEach(g => {
+    const d = new Date(g.data_evento);
+    const dias = Math.floor((d - hoje) / 86400000);
+    if (dias < 0) grupos.atrasadas.push({ ...g, dias });
+    else if (dias <= 30) grupos.em30.push({ ...g, dias });
+    else if (dias <= 90) grupos.em90.push({ ...g, dias });
+  });
+
+  // Se não tem nada urgente, não polui a tela
+  if (grupos.atrasadas.length + grupos.em30.length + grupos.em90.length === 0) return;
+
+  // Título da seção
+  const tituloSec = el('div');
+  tituloSec.style.cssText = 'margin:8px 0 14px;padding:12px 16px;background:linear-gradient(135deg,#fffaf0 0%,#fff7e6 100%);border-left:4px solid var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px';
+  tituloSec.innerHTML =
+    '<div style="font-weight:700;color:#7c2d12;font-size:14px">🤖 Gestões automáticas dos contratos</div>' +
+    '<div style="font-size:12px;color:#92400e">' +
+      (grupos.atrasadas.length > 0 ? '<strong style="color:#7f1d1d">' + grupos.atrasadas.length + ' atrasada(s)</strong> · ' : '') +
+      grupos.em30.length + ' em 30d · ' + grupos.em90.length + ' em 90d' +
+    '</div>';
+  container.appendChild(tituloSec);
+
+  const renderGrupo = (lista, rotuloPeriodo, corBg, corTexto) => {
+    if (lista.length === 0) return;
+    const grupoEl = el('div');
+    grupoEl.style.cssText = 'margin-bottom:14px';
+    const cabecalho = el('div');
+    cabecalho.style.cssText = 'font-size:11px;font-weight:700;color:' + corTexto + ';text-transform:uppercase;letter-spacing:.5px;margin:8px 4px 6px';
+    cabecalho.textContent = rotuloPeriodo + ' (' + lista.length + ')';
+    grupoEl.appendChild(cabecalho);
+
+    lista.forEach(g => {
+      const card = el('div');
+      card.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 14px;background:#fff;border:1px solid var(--line);border-left:4px solid ' + corBg + ';border-radius:6px;margin-bottom:6px;cursor:pointer;transition:all .15s';
+      card.onmouseenter = () => { card.style.borderColor = 'var(--accent)'; card.style.borderLeftColor = corBg; card.style.boxShadow = '0 2px 6px rgba(0,0,0,.06)'; };
+      card.onmouseleave = () => { card.style.borderColor = 'var(--line)'; card.style.borderLeftColor = corBg; card.style.boxShadow = 'none'; };
+
+      const tipoIcones = {
+        carencia_fim: '⏳', reajuste_aniversario: '📈', marco_5anos: '⚖️',
+        aviso_devolucao: '📤', termino: '🏁', garantia_pendencia: '🛡️',
+        validacao_fianca: '🔍', comprovantes: '🧾', vistoria: '🔧',
+        seguro: '🔥', destinacao: '📋'
+      };
+      const icone = tipoIcones[g.tipo] || '📌';
+      const data = new Date(g.data_evento).toLocaleDateString('pt-BR');
+      const labelDias = g.dias < 0 ? 'Atrasado ' + Math.abs(g.dias) + 'd'
+                      : g.dias === 0 ? 'HOJE'
+                      : 'Em ' + g.dias + 'd';
+
+      card.innerHTML =
+        '<div>' +
+          '<div style="font-weight:600;color:var(--ink);font-size:13px;display:flex;align-items:center;gap:6px">' +
+            '<span style="font-size:16px">' + icone + '</span>' +
+            escapeHtmlAlerta(g.titulo) +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--ink-soft);margin-top:3px">' +
+            '<strong>' + escapeHtmlAlerta(g.inquilino) + '</strong> · ' +
+            (g.clausula_origem ? escapeHtmlAlerta(g.clausula_origem) : '') +
+          '</div>' +
+        '</div>' +
+        '<div style="text-align:right">' +
+          '<div style="font-weight:700;color:var(--ink);font-size:13px">' + data + '</div>' +
+          '<div style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:' + corBg + ';color:#fff;margin-top:2px">' + labelDias + '</div>' +
+        '</div>';
+
+      // Clique abre o contrato no modo edição (aba Gestões)
+      card.addEventListener('click', () => {
+        if (typeof window.abrirContratoComAbaGestoes === 'function') {
+          window.abrirContratoComAbaGestoes(g.contrato_id);
+        } else {
+          abrirFormContrato(g.contrato_id);
+        }
+      });
+      grupoEl.appendChild(card);
+    });
+    container.appendChild(grupoEl);
+  };
+
+  renderGrupo(grupos.atrasadas, '⚠️ Atrasadas', '#dc2626', '#7f1d1d');
+  renderGrupo(grupos.em30,      '🔴 Próximas 30 dias', '#ea580c', '#9a3412');
+  renderGrupo(grupos.em90,      '🟡 Próximas 90 dias', '#ca8a04', '#854d0e');
+
+  // Separador entre seções
+  const sep = el('div');
+  sep.style.cssText = 'height:1px;background:var(--line);margin:18px 0';
+  container.appendChild(sep);
+}
+
+function escapeHtmlAlerta(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderBannerAlertas(contratos, propostas, leads, gestoes = []) {
   const box = document.getElementById('alertas-banner');
   if (!box) return;
 
   const hoje = Date.now();
   const itens = [];
+
+  // 0. Gestões atrasadas (urgência máxima — aparecem primeiro)
+  const hojeMs = new Date(); hojeMs.setHours(0,0,0,0);
+  const gestoesAtrasadas = (gestoes || []).filter(g =>
+    g.data_evento && new Date(g.data_evento) < hojeMs
+  );
+  if (gestoesAtrasadas.length > 0) {
+    itens.push(gestoesAtrasadas.length + ' gestão(ões) de contrato atrasada(s)');
+  }
 
   // 1. Contratos vencendo nos próximos 120 dias
   const contratosVencendo = contratos.filter(c => {

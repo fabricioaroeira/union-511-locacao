@@ -915,6 +915,33 @@ export async function deleteDocumento(id) {
 // GESTÕES DO CONTRATO — itens gestionáveis extraídos pelo IA
 // =====================================================================
 
+// Lista TODAS as gestões ativas (todos os contratos), com nome do inquilino
+// Usada no painel global de Alertas/Pendências
+export async function getGestoesAtivas() {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa
+    .from('gestoes_contrato')
+    .select(`
+      id, titulo, tipo, descricao, clausula_origem,
+      data_evento, recorrencia, dias_aviso, status,
+      contrato_id,
+      contratos!inner(
+        id,
+        inquilinos!inner(nome_fantasia, razao_social)
+      )
+    `)
+    .eq('ativo', true)
+    .not('data_evento', 'is', null)
+    .order('data_evento', { ascending: true });
+  if (error) throw new Error('Erro ao carregar gestões: ' + error.message);
+  // Achata estrutura aninhada pra facilitar uso
+  return (data || []).map(g => ({
+    ...g,
+    inquilino: g.contratos?.inquilinos?.nome_fantasia || g.contratos?.inquilinos?.razao_social || '?'
+  }));
+}
+
 // Lista todas as gestões de um contrato, ordenadas por data de evento
 export async function getGestoesPorContrato(contratoId) {
   if (MOCK_MODE) return [];
