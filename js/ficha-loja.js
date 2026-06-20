@@ -70,6 +70,7 @@ function corUrgencia(dias) {
 // =====================================================================
 let _contratoAtivo = null;
 let _abaAtiva = 'resumo';
+let _htmlOriginalCard = null;   // Snapshot do HTML do card pra restaurar ao voltar
 
 export function abrirFichaLoja(contratoId) {
   _contratoAtivo = contratoId;
@@ -79,6 +80,19 @@ export function abrirFichaLoja(contratoId) {
 
 export function fecharFichaLoja() {
   _contratoAtivo = null;
+  // Restaura o HTML original do card (com #ocupadas-titulo e #tbl-ocup) pra que renderTabelaOcupadas consiga voltar a renderizar a lista
+  const card = document.querySelector('#ocupadas .card');
+  if (card && _htmlOriginalCard) {
+    card.innerHTML = _htmlOriginalCard;
+    // Re-anexa listener do botão "+ Novo contrato" (perdido no innerHTML)
+    const btnNovo = card.querySelector('#btn-novo-contrato');
+    if (btnNovo) {
+      btnNovo.addEventListener('click', async () => {
+        const { abrirFormContrato } = await import('./forms-contrato.js');
+        abrirFormContrato();
+      });
+    }
+  }
 }
 
 export function getFichaLojaAtiva() {
@@ -92,6 +106,12 @@ async function renderFicha() {
   if (!_contratoAtivo) return;
   const card = document.querySelector('#ocupadas .card');
   if (!card) return;
+
+  // Salva o HTML original do card (lista de lojas) na primeira abertura
+  // pra poder restaurar quando clicar em "← Voltar à lista"
+  if (_htmlOriginalCard === null) {
+    _htmlOriginalCard = card.innerHTML;
+  }
 
   // Loading
   card.innerHTML = '<div style="padding:60px;text-align:center;color:var(--ink-soft)">⏳ Carregando ficha da loja...</div>';
