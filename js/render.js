@@ -4,7 +4,8 @@
 import {
   getKPIs, getLojasStatus, getInquilinos, getContratos, getPropostas, getArquivos, encerrarContrato, getLeads,
   getDocumentosByContrato, TIPOS_DOCUMENTO,
-  getGestoesAtivas
+  getGestoesAtivas,
+  getOcorrenciasPendentesGlobal
 } from './data-layer.js';
 import { getArquivoUrl } from './upload.js';
 import { abrirModal , promptCustom} from './modal.js';
@@ -40,7 +41,9 @@ export async function renderTudo() {
     getPropostas('ativas'),  // pra mapa, KPIs e legenda
     getPropostas(filtroProp), // pra aba propostas
     getLeads('todos').catch(() => []),
-    getGestoesAtivas().catch(() => [])
+    // Tenta ocorrências (novo sistema); se tabela não existe ainda, cai pro antigo
+    getOcorrenciasPendentesGlobal().then(o => o.length ? o : null).catch(() => null)
+      .then(o => o ?? getGestoesAtivas().catch(() => []))
   ]);
   const propostas = propostasAtivas; // alias pra renders que usam propostas ativas
   const safe = (fn, nome) => { try { return fn(); } catch (e) { console.error('render error em ' + nome + ':', e); } };
@@ -1111,7 +1114,7 @@ async function abrirModalArquivosProposta(propostaId) {
           if (url) window.open(url, '_blank');
           else mostrarToast('Arquivo não encontrado', 'error');
         } catch (err) {
-        mostrarToast('Erro: ' + err.message, 'error');
+          mostrarToast('Erro: ' + err.message, 'error');
         } finally {
           b.disabled = false;
           b.textContent = '📎 Baixar';

@@ -7,10 +7,11 @@ import {
   getContrato, getArquivos, getDocumentosByContrato, TIPOS_DOCUMENTO,
   getGestoesPorContrato, atualizarGestaoAtivo, getHistoricoContrato,
   getInquilinos, getLojasStatus, saveContrato,
-  getAnexosContrato
+  getAnexosContrato,
+  getOcorrenciasPorGestao, marcarOcorrenciaCumprida, reabrirOcorrencia
 } from './data-layer.js';
 import { abrirFormContrato } from './forms-contrato.js';
-import { campo, lojasPicker } from './modal.js';
+import { campo, lojasPicker, abrirModal } from './modal.js';
 import { getArquivoUrl } from './upload.js';
 import { mostrarToast, renderTudo } from './render.js';
 
@@ -584,60 +585,206 @@ function renderListaAnexos(anexos, contratoId) {
 }
 
 // =====================================================================
-// ABA: GESTÕES (lista compacta com toggle)
+// ABA: GESTÕES (com ocorrências cíclicas, botão Cumprir e histórico)
 // =====================================================================
+const LABEL_CATEGORIA_GESTAO = {
+  evento_unico: 'Evento único',
+  ciclo_recorrente: 'Ciclo recorrente',
+  informativo: 'Informativo',
+  pendencia_pontual: 'Pendência pontual'
+};
+
 function renderListaGestoes(gestoes, contratoId) {
   const div = el('div', { className: 'ficha-bloco' });
-  div.innerHTML = '<h3>🤖 Gestões automáticas (geradas por IA)</h3>';
+  div.innerHTML =
+    '<h3>🤖 Gestões automáticas</h3>' +
+    '<p style="color:var(--ink-soft);font-size:12px;margin-bottom:10px">' +
+    'Cada gestão pode ter ciclos recorrentes (ex: pedir comprovantes a cada 6 meses). ' +
+    'Marque como "cumprido" quando o cliente entregar — o próximo ciclo será criado automaticamente.' +
+    '</p>';
 
   if (!gestoes || gestoes.length === 0) {
-    div.innerHTML += '<div class="ficha-vazio">Nenhuma gestão cadastrada para este contrato. O kit padrão pode ser gerado via SQL.</div>';
+    div.innerHTML += '<div class="ficha-vazio">Nenhuma gestão cadastrada para este contrato.</div>';
     return div;
   }
 
-  const lista = el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:10px' });
-  gestoes.forEach(g => {
-    const dias = g.data_evento ? diasAte(new Date(g.data_evento).toLocaleDateString('pt-BR')) : null;
-    const cor = corUrgencia(dias);
-    const icone = ICONES_TIPO_GESTAO[g.tipo] || '📌';
-    const item = el('div', { className: 'ficha-item' + (g.ativo ? '' : ' inativa') });
-    item.innerHTML = `
-      <div style="font-size:22px;width:32px;text-align:center">${icone}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:600;color:var(--ink);font-size:13px">${escapeHtml(g.titulo)}</div>
-        <div style="font-size:11px;color:var(--ink-soft);margin-top:3px">${escapeHtml(g.descricao || '')}</div>
-        ${g.clausula_origem ? '<div style="font-size:10px;color:#94a3b8;margin-top:3px;font-style:italic">📑 ' + escapeHtml(g.clausula_origem) + '</div>' : ''}
-      </div>
-      <div style="text-align:right;min-width:110px">
-        <div style="font-weight:700;color:var(--ink);font-size:12px">${g.data_evento ? new Date(g.data_evento).toLocaleDateString('pt-BR') : 'sem data'}</div>
-        ${dias != null ? '<div style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:' + cor.bg + ';color:' + cor.txt + ';margin-top:3px">' + (dias < 0 ? 'Atrasado ' + Math.abs(dias) + 'd' : 'Em ' + dias + 'd') + '</div>' : ''}
-        <label style="display:block;margin-top:6px;font-size:10px;color:var(--ink-soft);cursor:pointer">
-          <input type="checkbox" data-toggle ${g.ativo ? 'checked' : ''}> ativa
-        </label>
-      </div>
-    `;
-    const cb = item.querySelector('[data-toggle]');
-    cb.onchange = async (ev) => {
-      try {
-        await atualizarGestaoAtivo(g.id, ev.target.checked);
-        item.classList.toggle('inativa', !ev.target.checked);
-        g.ativo = ev.target.checked;
-        mostrarToast(ev.target.checked ? 'Gestão reativada' : 'Gestão desativada', 'success');
-      } catch (err) {
-        ev.target.checked = !ev.target.checked;
-        mostrarToast('Erro: ' + err.message, 'error');
-      }
-    };
-    lista.appendChild(item);
-  });
+  const lista = el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:10px' });
+  gestoes.forEach(g => lista.appendChild(montarCardGestao(g, contratoId)));
   div.appendChild(lista);
   return div;
 }
 
-// =====================================================================
-// ABA: ARQUIVOS (PDFs anexados)
-// =====================================================================
-// (renderListaArquivos removida — substituída por renderListaAnexos unificada)
+function montarCardGestao(g, contratoId) {
+  const icone = ICONES_TIPO_GESTAO[g.tipo] || '📌';
+  const card = el('div', { className: 'ficha-item' + (g.ativo ? '' : ' inativa'), style: 'flex-direction:column;align-items:stretch;gap:0' });
+
+  // Header da gestão (regra/template)
+  const header = el('div', { style: 'display:flex;align-items:flex-start;gap:12px;padding:0 0 8px;border-bottom:1px solid #f1f5f9' });
+  const catLabel = LABEL_CATEGORIA_GESTAO[g.categoria] || 'Gestão';
+  const perio = g.periodicidade_meses ? ' · cada ' + g.periodicidade_meses + ' meses' : '';
+  header.innerHTML = `
+    <div style="font-size:22px;width:32px;text-align:center">${icone}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;color:var(--ink);font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        ${escapeHtml(g.titulo)}
+        <span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">${escapeHtml(catLabel)}${escapeHtml(perio)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:3px">${escapeHtml(g.descricao || '')}</div>
+      ${g.clausula_origem ? '<div style="font-size:10px;color:#94a3b8;margin-top:3px;font-style:italic">📑 ' + escapeHtml(g.clausula_origem) + '</div>' : ''}
+    </div>
+    <label style="font-size:10px;color:var(--ink-soft);cursor:pointer;white-space:nowrap">
+      <input type="checkbox" data-toggle ${g.ativo ? 'checked' : ''}> ativa
+    </label>
+  `;
+  card.appendChild(header);
+  header.querySelector('[data-toggle]').onchange = async (ev) => {
+    try {
+      await atualizarGestaoAtivo(g.id, ev.target.checked);
+      card.classList.toggle('inativa', !ev.target.checked);
+      g.ativo = ev.target.checked;
+      mostrarToast(ev.target.checked ? 'Gestão reativada' : 'Gestão desativada', 'success');
+    } catch (err) {
+      ev.target.checked = !ev.target.checked;
+      mostrarToast('Erro: ' + err.message, 'error');
+    }
+  };
+
+  // Área de ocorrências (lazy load quando o card for renderizado)
+  const ocorContainer = el('div', { style: 'padding-top:10px;font-size:12px' });
+  ocorContainer.innerHTML = '<div style="color:var(--ink-soft);font-style:italic">⏳ Carregando ocorrências...</div>';
+  card.appendChild(ocorContainer);
+
+  // Para informativo, não mostra ocorrências
+  if (g.categoria === 'informativo') {
+    ocorContainer.innerHTML = '<div style="color:var(--ink-soft);font-size:11px;font-style:italic">📋 Regra informativa — sem ocorrências a cumprir</div>';
+    return card;
+  }
+
+  // Carrega ocorrências
+  (async () => {
+    try {
+      const ocorrencias = await getOcorrenciasPorGestao(g.id);
+      ocorContainer.innerHTML = '';
+      ocorContainer.appendChild(montarBlocoOcorrencias(ocorrencias, g, contratoId, ocorContainer));
+    } catch (err) {
+      ocorContainer.innerHTML = '<div style="color:#991b1b;font-size:11px">Erro: ' + escapeHtml(err.message) + '</div>';
+    }
+  })();
+
+  return card;
+}
+
+function montarBlocoOcorrencias(ocorrencias, gestao, contratoId, container) {
+  const div = el('div');
+  const pendentes = ocorrencias.filter(o => o.status === 'pendente');
+  const cumpridas = ocorrencias.filter(o => o.status === 'cumprido');
+  const atual = pendentes[0];
+
+  if (atual) {
+    const dias = diasAte(new Date(atual.data_prevista).toLocaleDateString('pt-BR'));
+    const cor = corUrgencia(dias);
+    const labelDias = dias == null ? '—' : (dias < 0 ? 'Atrasado ' + Math.abs(dias) + 'd' : (dias === 0 ? 'HOJE' : 'Em ' + dias + 'd'));
+    const box = el('div', { style: 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:' + cor.bg + ';border-radius:6px' });
+    box.innerHTML =
+      '<div style="flex:1">' +
+        '<div style="font-weight:700;color:' + cor.txt + ';font-size:13px">Próximo: ' + new Date(atual.data_prevista).toLocaleDateString('pt-BR') + '</div>' +
+        '<div style="font-size:11px;color:' + cor.txt + ';opacity:.9">' + labelDias + '</div>' +
+      '</div>' +
+      '<button type="button" class="btn sm" data-cumprir style="background:var(--accent);color:#fff;font-size:11px;padding:6px 12px">✓ Marcar cumprido</button>';
+    box.querySelector('[data-cumprir]').onclick = () => abrirFormCumprir(atual, gestao, contratoId, container);
+    div.appendChild(box);
+  } else if (gestao.categoria !== 'pendencia_pontual') {
+    div.innerHTML = '<div style="padding:8px 10px;color:var(--ink-soft);font-size:11px;font-style:italic">Sem ocorrências pendentes.</div>';
+  }
+
+  if (cumpridas.length > 0) {
+    const collapse = el('details', { style: 'margin-top:8px' });
+    collapse.innerHTML = '<summary style="cursor:pointer;font-size:11px;color:var(--ink-soft);font-weight:600;padding:4px 0">📜 Histórico (' + cumpridas.length + ' cumprida' + (cumpridas.length>1?'s':'') + ')</summary>';
+    const histLista = el('div', { style: 'margin-top:6px;display:flex;flex-direction:column;gap:4px' });
+    cumpridas.sort((a,b) => new Date(b.data_cumprida) - new Date(a.data_cumprida)).forEach(o => {
+      const linha = el('div', { style: 'display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f0fdf4;border-left:3px solid #16a34a;border-radius:4px;font-size:11px' });
+      const dataPrev = new Date(o.data_prevista).toLocaleDateString('pt-BR');
+      const dataCump = o.data_cumprida ? new Date(o.data_cumprida).toLocaleDateString('pt-BR') : '—';
+      const arquivoLink = o.arquivo
+        ? '<button type="button" data-ver-arq style="background:none;border:none;color:#16a34a;font-size:11px;cursor:pointer;text-decoration:underline">📎 ver anexo</button>'
+        : '';
+      linha.innerHTML =
+        '<span style="flex:1;color:#166534">✓ <strong>' + dataCump + '</strong> <span style="opacity:.6">(previsto: ' + dataPrev + ')</span></span>' +
+        arquivoLink +
+        '<button type="button" data-reabrir style="background:none;border:none;color:#94a3b8;font-size:10px;cursor:pointer">↺ reabrir</button>';
+      const btnArq = linha.querySelector('[data-ver-arq]');
+      if (btnArq && o.arquivo && o.arquivo.storage_path) {
+        btnArq.onclick = async () => {
+          try {
+            const url = await getArquivoUrl(o.arquivo.storage_path);
+            if (url) window.open(url, '_blank');
+          } catch (err) { mostrarToast('Erro: ' + err.message, 'error'); }
+        };
+      }
+      linha.querySelector('[data-reabrir]').onclick = async () => {
+        try {
+          await reabrirOcorrencia(o.id);
+          mostrarToast('Ocorrência reaberta', 'success');
+          const novas = await getOcorrenciasPorGestao(gestao.id);
+          container.innerHTML = '';
+          container.appendChild(montarBlocoOcorrencias(novas, gestao, contratoId, container));
+        } catch (err) { mostrarToast('Erro: ' + err.message, 'error'); }
+      };
+      histLista.appendChild(linha);
+    });
+    collapse.appendChild(histLista);
+    div.appendChild(collapse);
+  }
+  return div;
+}
+
+function abrirFormCumprir(ocorrencia, gestao, contratoId, container) {
+  const body = el('div');
+  const dataHoje = new Date().toISOString().slice(0,10);
+  body.innerHTML =
+    '<div style="margin-bottom:14px;padding:10px;background:#f8fafc;border-radius:6px;font-size:13px">' +
+      '<strong>' + escapeHtml(gestao.titulo) + '</strong><br>' +
+      '<span style="font-size:11px;color:var(--ink-soft)">Previsto para ' + new Date(ocorrencia.data_prevista).toLocaleDateString('pt-BR') + '</span>' +
+    '</div>' +
+    '<div class="form-grid">' +
+      '<div class="form-field">' +
+        '<label>Data do cumprimento *</label>' +
+        '<input type="date" name="data_cumprida" value="' + dataHoje + '" required>' +
+      '</div>' +
+      '<div class="form-field full">' +
+        '<label>Observações (opcional)</label>' +
+        '<textarea name="observacao" rows="2" placeholder="Ex: Cliente entregou comprovantes via WhatsApp"></textarea>' +
+      '</div>' +
+      '<div class="form-field full">' +
+        '<label>📎 Anexar comprovante (PDF — opcional)</label>' +
+        '<input type="file" name="arquivo" accept="application/pdf,image/*">' +
+        '<small style="font-size:10px;color:var(--ink-soft)">Se anexar, o arquivo vai aparecer também na aba "Anexos" deste contrato.</small>' +
+      '</div>' +
+    '</div>';
+
+  abrirModal({
+    titulo: '✓ Marcar como cumprido',
+    body,
+    submitLabel: 'Confirmar cumprimento',
+    onSubmit: async () => {
+      const form = body.closest('form');
+      const fd = new FormData(form);
+      const dataCump = fd.get('data_cumprida');
+      const obs = fd.get('observacao');
+      const arq = body.querySelector('input[name=arquivo]')?.files?.[0] || null;
+      await marcarOcorrenciaCumprida(ocorrencia.id, {
+        dataCumprida: dataCump,
+        observacao: obs,
+        arquivoFile: arq,
+        contratoId: contratoId
+      });
+      mostrarToast('Cumprimento registrado! Próximo ciclo criado automaticamente.', 'success');
+      const novas = await getOcorrenciasPorGestao(gestao.id);
+      container.innerHTML = '';
+      container.appendChild(montarBlocoOcorrencias(novas, gestao, contratoId, container));
+    }
+  });
+}
 
 // =====================================================================
 // ABA: HISTÓRICO de alterações
@@ -647,7 +794,7 @@ function renderListaHistorico(historico) {
   div.innerHTML = '<h3>🕐 Histórico de alterações</h3>';
 
   if (!historico || historico.length === 0) {
-    div.innerHTML += '<div class="ficha-vazio">Nenhuma alteração registrada ainda. O histórico passa a registrar mudanças a partir de agora (cadastro do audit log).</div>';
+    div.innerHTML += '<div class="ficha-vazio">Nenhuma alteração registrada ainda.</div>';
     return div;
   }
 
@@ -671,11 +818,9 @@ function renderListaHistorico(historico) {
     } else {
       descricao = '<strong>' + escapeHtml(h.acao) + '</strong>';
     }
-
-    item.innerHTML = `
-      <div style="font-size:11px;color:var(--ink-soft);min-width:130px">${data}</div>
-      <div style="flex:1">${descricao}</div>
-    `;
+    item.innerHTML =
+      '<div style="font-size:11px;color:var(--ink-soft);min-width:130px">' + data + '</div>' +
+      '<div style="flex:1">' + descricao + '</div>';
     lista.appendChild(item);
   });
   div.appendChild(lista);

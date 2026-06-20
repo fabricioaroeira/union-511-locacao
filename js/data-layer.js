@@ -915,8 +915,34 @@ export async function deleteDocumento(id) {
 // GESTÕES DO CONTRATO — itens gestionáveis extraídos pelo IA
 // =====================================================================
 
-// Lista TODAS as gestões ativas (todos os contratos), com nome do inquilino
-// Usada no painel global de Alertas/Pendências
+// Lista ocorrências PENDENTES de todos os contratos (com inquilino + gestão).
+// Substitui a antiga lógica de "gestões com data_evento" no painel de Alertas.
+export async function getOcorrenciasPendentesGlobal() {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa
+    .from('gestao_ocorrencias')
+    .select(`id, gestao_id, contrato_id, data_prevista, status,
+             gestoes_contrato!inner(titulo, tipo, descricao, clausula_origem, categoria),
+             contratos!inner(id, inquilinos!inner(nome_fantasia, razao_social))`)
+    .eq('status', 'pendente')
+    .order('data_prevista', { ascending: true });
+  if (error) {
+    if (/relation .* does not exist/i.test(error.message)) return [];
+    throw new Error('Erro ao carregar ocorrências: ' + error.message);
+  }
+  return (data || []).map(o => ({
+    ...o,
+    titulo: o.gestoes_contrato?.titulo,
+    tipo: o.gestoes_contrato?.tipo,
+    descricao: o.gestoes_contrato?.descricao,
+    clausula_origem: o.gestoes_contrato?.clausula_origem,
+    categoria: o.gestoes_contrato?.categoria,
+    inquilino: o.contratos?.inquilinos?.nome_fantasia || o.contratos?.inquilinos?.razao_social || '?',
+    data_evento: o.data_prevista
+  }));
+}
+
 // =====================================================================
 // ANEXOS UNIFICADOS — junta arquivos brutos + documentos com validade
 // Cada item devolvido tem a mesma estrutura, com flag `fonte`:
@@ -987,6 +1013,71 @@ export async function getGestoesAtivas() {
     ...g,
     inquilino: g.contratos?.inquilinos?.nome_fantasia || g.contratos?.inquilinos?.razao_social || '?'
   }));
+}
+
+// =====================================================================
+// OCORRÊNCIAS (instâncias dos ciclos de gestão)
+// =====================================================================
+
+// Lista ocorrências de uma gestão (com info de anexo se houver)
+export async function getOcorrenciasPorGestao(gestaoId) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa
+    .from('gestao_ocorrencias')
+    .select(`id, gestao_id, contrato_id, data_prevista, data_cumprida, status,
+             observacao, arquivo_id, cumprido_em,
+             arquivos(id, nome_original, storage_path, categoria)`)
+    .eq('gestao_id', gestaoId)
+    .order('data_prevista', { ascending: true });
+  if (error) {
+    if (/relation .* does not exist/i.test(error.message)) return [];
+    throw new Error('Erro ao carregar ocorrências: ' + error.message);
+  }
+  return (data || []).map(o => ({ ...o, arquivo: o.arquivos || null }));
+}
+
+// Marca uma ocorrência como cumprida. Opcionalmente anexa arquivo.
+// O arquivo (se passado) é salvo como anexo do contrato + vinculado à ocorrência.
+export async function marcarOcorrenciaCumprida(ocorrenciaId, { dataCumprida, observacao, arquivoFile, contratoId }) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  let arquivoId = null;
+
+  // Se tem arquivo opcional, faz upload primeiro (vira anexo do contrato também)
+  if (arquivoFile && contratoId) {
+    const { uploadArquivo } = await import('./upload.js');
+    const arq = await uploadArquivo(arquivoFile, {
+      entidade_tipo: 'contrato',
+      entidade_id: contratoId,
+      categoria: 'comprovante'
+    });
+    arquivoId = arq?.id || null;
+  }
+
+  const patch = {
+    status: 'cumprido',
+    data_cumprida: dataCumprida || new Date().toISOString().slice(0,10),
+    observacao: observacao || null
+  };
+  if (arquivoId) patch.arquivo_id = arquivoId;
+
+  const { error } = await supa.from('gestao_ocorrencias').update(patch).eq('id', ocorrenciaId);
+  if (error) throw new Error('Erro ao marcar cumprida: ' + error.message);
+  return true;
+}
+
+// Desfaz cumprimento (volta pra pendente) — útil se marcou errado
+export async function reabrirOcorrencia(ocorrenciaId) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('gestao_ocorrencias').update({
+    status: 'pendente',
+    data_cumprida: null,
+    cumprido_em: null
+  }).eq('id', ocorrenciaId);
+  if (error) throw new Error('Erro ao reabrir ocorrência: ' + error.message);
+  return true;
 }
 
 // Histórico de alterações de um contrato (audit log)
