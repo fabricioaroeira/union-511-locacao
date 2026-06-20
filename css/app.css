@@ -576,3 +576,12 @@ tr:hover td{background:#fafbfc}
   .resumo-grid{grid-template-columns:1fr}
   .ficha-header-titulo{font-size:17px}
 }
+
+/* Barra de ação fixa no rodapé do form Dados (na ficha) */
+.ficha-form-dados{display:flex;flex-direction:column;gap:0}
+.ficha-form-acoes{position:sticky;bottom:0;background:#fff;padding:14px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;z-index:3;border-radius:0 0 10px 10px;box-shadow:0 -4px 12px rgba(0,0,0,.04);margin-top:6px}
+.ficha-form-acoes .btn{min-width:140px}
+@media (max-width:640px){
+  .ficha-form-acoes{flex-direction:column-reverse}
+  .ficha-form-acoes .btn{width:100%}
+}

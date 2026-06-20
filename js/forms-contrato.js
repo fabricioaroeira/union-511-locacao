@@ -343,62 +343,7 @@ export async function abrirFormContrato(id = null, opts = {}) {
     }, 100);
   }
 
-  // ============================================================
-  // Sistema de abas (só ao editar contrato existente)
-  // Aba 1: Dados do contrato (form atual)
-  // Aba 2: Gestões (itens gestionáveis do contrato)
-  // ============================================================
-  if (id) {
-    const childrenAtuais = Array.from(body.children);
-    const panelDados = el('div');
-    childrenAtuais.forEach(c => panelDados.appendChild(c));
-
-    const panelGestoes = el('div');
-    panelGestoes.style.display = 'none';
-    panelGestoes.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);font-size:13px">⏳ Carregando gestões...</div>';
-
-    const tabBar = el('div', { className: 'contrato-tabs' });
-    const btnAbaDados = el('button', { type: 'button', className: 'contrato-tab active' }, 'Dados do contrato');
-    const btnAbaGestoes = el('button', { type: 'button', className: 'contrato-tab' });
-    btnAbaGestoes.innerHTML = 'Gestões<span class="badge" data-gestoes-count>·</span>';
-    tabBar.appendChild(btnAbaDados);
-    tabBar.appendChild(btnAbaGestoes);
-
-    body.innerHTML = '';
-    body.appendChild(tabBar);
-    body.appendChild(panelDados);
-    body.appendChild(panelGestoes);
-
-    btnAbaDados.addEventListener('click', () => {
-      btnAbaDados.classList.add('active');
-      btnAbaGestoes.classList.remove('active');
-      panelDados.style.display = '';
-      panelGestoes.style.display = 'none';
-    });
-
-    let gestoesCarregadas = false;
-    btnAbaGestoes.addEventListener('click', async () => {
-      btnAbaGestoes.classList.add('active');
-      btnAbaDados.classList.remove('active');
-      panelDados.style.display = 'none';
-      panelGestoes.style.display = '';
-      if (!gestoesCarregadas) {
-        gestoesCarregadas = true;
-        try {
-          const gestoes = await getGestoesPorContrato(id);
-          renderGestoesPainel(gestoes, panelGestoes, btnAbaGestoes, id);
-        } catch (err) {
-          panelGestoes.innerHTML = '<div style="padding:20px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:13px">⚠️ Erro ao carregar gestões: ' + err.message + '</div>';
-        }
-      }
-    });
-
-    // Pré-carrega contagem de gestões pro badge da aba
-    getGestoesPorContrato(id).then(gs => {
-      const c = btnAbaGestoes.querySelector('[data-gestoes-count]');
-      if (c) c.textContent = String((gs || []).filter(g => g.ativo).length);
-    }).catch(() => {});
-  }
+  // (Sistema de abas removido — Gestões agora ficam na ficha da loja)
 
   abrirModal({
     titulo: id ? 'Editar contrato' : (opts.fromProposta ? 'Converter proposta em contrato' : 'Novo contrato'),

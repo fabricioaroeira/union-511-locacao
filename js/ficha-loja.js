@@ -5,11 +5,20 @@
 import { el, fmtBR, parseBR, addMonths, mesesEntre, formatMoney, LABELS_GARANTIA } from './utils.js';
 import {
   getContrato, getArquivos, getDocumentosByContrato, TIPOS_DOCUMENTO,
-  getGestoesPorContrato, atualizarGestaoAtivo, getHistoricoContrato
+  getGestoesPorContrato, atualizarGestaoAtivo, getHistoricoContrato,
+  getInquilinos, getLojasStatus, saveContrato
 } from './data-layer.js';
 import { abrirFormContrato } from './forms-contrato.js';
+import { campo, lojasPicker } from './modal.js';
 import { getArquivoUrl } from './upload.js';
 import { mostrarToast, renderTudo } from './render.js';
+
+function toIsoDate(brStr) {
+  if (!brStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(brStr)) return brStr.slice(0,10);
+  const m = String(brStr).match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
 
 // Labels traduzidos pros campos do histórico
 const LABEL_CAMPO = {
@@ -293,30 +302,178 @@ function renderResumo(c, dados) {
 }
 
 // =====================================================================
-// ABA: DADOS (botão pra editar via modal existente)
+// ABA: DADOS — campos editáveis direto (sem modal)
 // =====================================================================
 function renderAbaDados(c) {
-  const div = el('div', { className: 'ficha-bloco' });
-  div.innerHTML = `
-    <h3>Dados estruturados do contrato</h3>
-    <p style="color:var(--ink-soft);font-size:13px;margin-bottom:14px">
-      Use o botão abaixo para editar todos os campos do contrato no formulário detalhado (mesmo formulário usado para criar novos contratos).
-    </p>
-  `;
-  const btn = el('button', { type: 'button', className: 'btn' }, '✏️ Editar dados do contrato');
-  btn.style.cssText = 'background:var(--accent);color:#fff';
-  btn.onclick = async () => {
-    abrirFormContrato(c.id);
-    // Quando fechar o modal, recarrega ficha
-    setTimeout(() => renderFicha(), 500);
-  };
-  div.appendChild(btn);
-  return div;
+  const wrapper = el('div');
+
+  // Loading placeholder enquanto carrega inquilinos/lojas
+  wrapper.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);font-size:13px">⏳ Carregando formulário...</div>';
+
+  // Carrega inquilinos + lojas em paralelo, depois monta o form
+  (async () => {
+    try {
+      const [inquilinos, lojasStatus] = await Promise.all([getInquilinos(), getLojasStatus()]);
+      wrapper.innerHTML = '';
+      wrapper.appendChild(montarFormDados(c, inquilinos, lojasStatus));
+    } catch (err) {
+      wrapper.innerHTML = '<div style="padding:20px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:13px">⚠️ Erro ao carregar form: ' + err.message + '</div>';
+    }
+  })();
+
+  return wrapper;
 }
 
+function montarFormDados(c, inquilinos, lojasStatus) {
+  const form = el('form', { className: 'ficha-form-dados' });
+  form.setAttribute('novalidate', 'true');
+
+  // ============== SEÇÃO 1: INQUILINO ==============
+  const sec1 = el('div', { className: 'ficha-bloco' });
+  sec1.innerHTML = '<h3>👤 Inquilino</h3>';
+  const inqOptions = [
+    { value: '', label: '- Selecione -' },
+    ...inquilinos.map(i => ({ value: i.id, label: (i.nome_fantasia ? i.nome_fantasia + ' - ' : '') + i.razao_social + ' (' + i.documento + ')' }))
+  ];
+  const grid1 = el('div', { className: 'form-grid' });
+  grid1.appendChild(campo({ name: 'inquilino_id', label: 'Inquilino', type: 'select', options: inqOptions, value: c.inquilino_id || '', required: true, full: true }));
+  sec1.appendChild(grid1);
+  form.appendChild(sec1);
+
+  // ============== SEÇÃO 2: LOJAS ==============
+  const sec2 = el('div', { className: 'ficha-bloco' });
+  sec2.innerHTML = '<h3>🏪 Lojas</h3>';
+  const areaIndicador = el('div', { style: { fontSize: '12px', color: 'var(--ink-soft)', marginTop: '6px' } });
+  const picker = lojasPicker({
+    lojasStatus,
+    selecionadas: c.lojas || [],
+    permitirOcupadas: true,
+    onChange: (lojasSel, areaTotal) => {
+      areaIndicador.innerHTML = areaTotal > 0
+        ? '<strong style="color:var(--ink)">' + areaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²</strong> calculado a partir das lojas selecionadas'
+        : '';
+    }
+  });
+  sec2.appendChild(picker.el);
+  sec2.appendChild(areaIndicador);
+  setTimeout(() => {
+    const a = picker.getAreaTotal ? picker.getAreaTotal() : 0;
+    if (a > 0) areaIndicador.innerHTML = '<strong style="color:var(--ink)">' + a.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²</strong> calculado a partir das lojas selecionadas';
+  }, 50);
+  form.appendChild(sec2);
+
+  // ============== SEÇÃO 3: PREÇO, PRAZO E DATAS ==============
+  const sec3 = el('div', { className: 'ficha-bloco' });
+  sec3.innerHTML = '<h3>💰 Preço, prazo e datas</h3>';
+  const grid3 = el('div', { className: 'form-grid cols-3' });
+  grid3.appendChild(campo({ name: 'valor_aluguel', label: 'Valor mensal (R$)', type: 'number', value: c.valor_aluguel, required: true }));
+  grid3.appendChild(campo({ name: 'dia_vencimento', label: 'Dia vencimento', type: 'number', value: c.dia_vencimento || 1, required: true }));
+  grid3.appendChild(campo({ name: 'meses_carencia', label: 'Carência (meses)', type: 'number', value: c.meses_carencia ?? 3 }));
+  grid3.appendChild(campo({ name: 'data_assinatura', label: 'Data de assinatura', type: 'date', value: toIsoDate(c.data_assinatura), required: true }));
+  grid3.appendChild(campo({ name: 'data_inicio', label: 'Início da vigência', type: 'date', value: toIsoDate(c.data_inicio), required: true }));
+  grid3.appendChild(campo({ name: 'prazo_meses', label: 'Prazo (meses)', type: 'number', value: c.prazo_meses || 60, required: true }));
+  sec3.appendChild(grid3);
+  form.appendChild(sec3);
+
+  // ============== SEÇÃO 4: REAJUSTE E GARANTIA ==============
+  const sec4 = el('div', { className: 'ficha-bloco' });
+  sec4.innerHTML = '<h3>📊 Reajuste e garantia</h3>';
+  const grid4 = el('div', { className: 'form-grid' });
+  grid4.appendChild(campo({
+    name: 'indice_reajuste', label: 'Índice de reajuste', type: 'select',
+    options: [
+      { value: 'IGP-M', label: 'IGP-M/FGV' },
+      { value: 'IPCA', label: 'IPCA' },
+      { value: 'INPC', label: 'INPC' },
+      { value: 'outro', label: 'Outro' }
+    ],
+    value: c.indice_reajuste || 'IGP-M'
+  }));
+  grid4.appendChild(campo({
+    name: 'tipo_garantia', label: 'Tipo de garantia', type: 'select',
+    options: [
+      { value: 'fianca_pj', label: 'Fiança PJ' },
+      { value: 'fianca_pessoal', label: 'Fiança Pessoal' },
+      { value: 'seguro_fianca', label: 'Seguro Fiança' },
+      { value: 'titulo_capitalizacao', label: 'Título de Capitalização' },
+      { value: 'sem_garantia', label: 'Sem garantia' }
+    ],
+    value: c.tipo_garantia || 'fianca_pessoal',
+    required: true
+  }));
+  grid4.appendChild(campo({ name: 'detalhes_garantia', label: 'Detalhes da garantia', type: 'textarea', value: c.detalhes_garantia, full: true }));
+  sec4.appendChild(grid4);
+  form.appendChild(sec4);
+
+  // ============== SEÇÃO 5: ESPECIAIS ==============
+  const sec5 = el('div', { className: 'ficha-bloco' });
+  sec5.innerHTML = '<h3>📝 Observações e regras especiais</h3>';
+  const grid5 = el('div', { className: 'form-grid' });
+  const parcialCampo = el('div', { className: 'form-field full' });
+  parcialCampo.innerHTML = '<label><input type="checkbox" name="parcial" ' + (c.parcial ? 'checked' : '') + '> Loja parcial / com vagas</label>';
+  grid5.appendChild(parcialCampo);
+  grid5.appendChild(campo({ name: 'observacoes', label: 'Observações', type: 'textarea', value: c.observacoes, full: true, rows: 4 }));
+  sec5.appendChild(grid5);
+  form.appendChild(sec5);
+
+  // ============== BARRA DE AÇÃO (Salvar / Cancelar) ==============
+  const barraAcao = el('div', { className: 'ficha-form-acoes' });
+  const btnCancelar = el('button', { type: 'button', className: 'btn ghost' }, 'Descartar alterações');
+  const btnSalvar = el('button', { type: 'button', className: 'btn' }, '💾 Salvar alterações');
+  btnSalvar.style.cssText = 'background:var(--accent);color:#fff';
+  barraAcao.appendChild(btnCancelar);
+  barraAcao.appendChild(btnSalvar);
+  form.appendChild(barraAcao);
+
+  btnCancelar.onclick = () => renderFicha(); // recarrega tudo (descarta mudanças)
+
+  btnSalvar.onclick = async () => {
+    btnSalvar.disabled = true;
+    const labelOriginal = btnSalvar.textContent;
+    btnSalvar.textContent = '⏳ Salvando...';
+    try {
+      const fd = new FormData(form);
+      const input = {
+        id: c.id,
+        inquilino_id: fd.get('inquilino_id'),
+        valor_aluguel: Number(fd.get('valor_aluguel')),
+        dia_vencimento: Number(fd.get('dia_vencimento')),
+        meses_carencia: Number(fd.get('meses_carencia')),
+        data_assinatura: fd.get('data_assinatura'),
+        data_inicio: fd.get('data_inicio'),
+        prazo_meses: Number(fd.get('prazo_meses')),
+        indice_reajuste: fd.get('indice_reajuste'),
+        tipo_garantia: fd.get('tipo_garantia'),
+        detalhes_garantia: fd.get('detalhes_garantia'),
+        parcial: !!fd.get('parcial'),
+        observacoes: fd.get('observacoes'),
+        lojas: picker.getSelected()
+      };
+      // Validações básicas
+      if (!input.inquilino_id) throw new Error('Selecione um inquilino');
+      if (input.lojas.length === 0) throw new Error('Selecione pelo menos uma loja');
+      if (!input.valor_aluguel || input.valor_aluguel <= 0) throw new Error('Informe o valor do aluguel');
+      if (!input.data_assinatura) throw new Error('Informe a data de assinatura');
+      if (!input.data_inicio) throw new Error('Informe a data de início da vigência');
+      if (!input.prazo_meses || input.prazo_meses <= 0) throw new Error('Informe o prazo do contrato');
+
+      await saveContrato(input);
+      mostrarToast('Alterações salvas com sucesso', 'success');
+      // Recarrega a ficha pra refletir os novos dados (header + abas)
+      renderFicha();
+    } catch (err) {
+      mostrarToast('Erro: ' + err.message, 'error');
+      btnSalvar.disabled = false;
+      btnSalvar.textContent = labelOriginal;
+    }
+  };
+
+  return form;
+
 // =====================================================================
-// ABA: DOCUMENTOS (apólices, certidões, AVCB)
+// ABA: DOCUMENTOS / GESTÕES / ARQUIVOS / HISTÓRICO (restantes)
 // =====================================================================
+
 function renderListaDocumentos(documentos, contratoId) {
   const div = el('div', { className: 'ficha-bloco' });
   div.innerHTML = '<h3>📄 Documentos cadastrados</h3>';
