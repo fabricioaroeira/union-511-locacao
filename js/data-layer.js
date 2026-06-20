@@ -942,6 +942,23 @@ export async function getGestoesAtivas() {
   }));
 }
 
+// Histórico de alterações de um contrato (audit log)
+export async function getHistoricoContrato(contratoId) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa
+    .from('contratos_historico')
+    .select('id, acao, campos_alterados, alterado_em, observacao')
+    .eq('contrato_id', contratoId)
+    .order('alterado_em', { ascending: false });
+  if (error) {
+    // Se a tabela ainda não foi criada, devolve vazio em vez de quebrar
+    if (/relation .* does not exist/i.test(error.message)) return [];
+    throw new Error('Erro ao carregar histórico: ' + error.message);
+  }
+  return data || [];
+}
+
 // Lista todas as gestões de um contrato, ordenadas por data de evento
 export async function getGestoesPorContrato(contratoId) {
   if (MOCK_MODE) return [];

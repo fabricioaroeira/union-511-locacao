@@ -509,21 +509,66 @@ tr:hover td{background:#fafbfc}
 
 .gestao-card .gtitulo{font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;line-height:1.3}
 .gestao-card .gdesc{font-size:12px;color:#64748b;line-height:1.5;margin-bottom:4px}
-.gestao-card .gclausula{font-size:11px;color:#94a3b8;margin-top:6px;font-style:italic;display:inline-block;background:#f8fafc;padding:2px 8px;border-radius:4px}
+.gestao-card .gclausula{font-size:11px;color:#94a3b8;margin-top:6px;font-style:italic;display:inline-
+/* =====================================================================
+   Ficha da loja (substitui a lista quando uma loja é clicada)
+   ===================================================================== */
+.ficha-loja{display:flex;flex-direction:column;gap:14px}
 
-.gestao-card .gbadge{display:inline-block;padding:3px 9px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;text-transform:uppercase;letter-spacing:.3px}
+.ficha-header{background:linear-gradient(135deg,#fffaf0 0%,#fff 100%);border:1px solid #fde6c2;border-left:4px solid var(--accent);border-radius:10px;padding:16px 20px}
+.ficha-header-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.ficha-header-titulo{font-size:20px;font-weight:700;color:#1e293b;letter-spacing:.5px}
+.ficha-header-sub{font-size:14px;color:#475569;font-weight:600;margin-top:2px}
+.ficha-header-meta{font-size:11px;color:#94a3b8;margin-top:4px}
 
-.gestao-card .gdata{text-align:right;padding-left:12px;border-left:1px solid #f1f5f9;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
-.gestao-card .gdata-data{font-weight:700;color:#1e293b;font-size:15px;letter-spacing:.2px}
-.gestao-card .gdata-rec{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
-.gestao-card .gdata .gbadge{margin-top:4px}
-.gestao-card .gtoggle{margin-top:auto;font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
-.gestao-card .gtoggle input{cursor:pointer}
+.ficha-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.ficha-kpi{background:#f8fafc;border-radius:8px;padding:10px 12px;text-align:left;transition:all .15s}
+.ficha-kpi-label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.ficha-kpi-valor{font-size:17px;font-weight:700;color:#1e293b;margin-top:3px;line-height:1.2}
+.ficha-kpi-extra{font-size:10px;color:#64748b;margin-top:3px}
 
-@media (max-width:640px){
-  .gestao-card{grid-template-columns:48px 1fr;gap:10px;padding:12px}
-  .gestao-card .gdata{grid-column:1/-1;text-align:left;padding-left:0;padding-top:10px;margin-top:4px;border-left:none;border-top:1px dashed #e2e8f0;flex-direction:row;align-items:center;flex-wrap:wrap;justify-content:flex-start;gap:10px}
-  .gestao-card .gtoggle{margin-top:0;margin-left:auto}
-  .contrato-tab{padding:9px 12px;font-size:12px}
-  .gestoes-header{font-size:12px;padding:12px}
+/* Tabs da ficha */
+.ficha-tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);padding-bottom:0;flex-wrap:wrap;overflow-x:auto;scrollbar-width:thin}
+.ficha-tab{flex:0 0 auto;padding:9px 14px;background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;transition:all .15s;white-space:nowrap}
+.ficha-tab:hover{color:#1e293b;background:#f8fafc}
+.ficha-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* Conteúdo das abas */
+.ficha-conteudo{padding-top:14px}
+.ficha-bloco{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:14px}
+.ficha-bloco h3{font-size:14px;font-weight:700;color:#1e293b;margin:0 0 12px;letter-spacing:.3px}
+.ficha-vazio{padding:24px;text-align:center;color:var(--ink-soft);font-size:12px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;margin-top:8px}
+
+/* Item da lista (documento, gestão, arquivo) */
+.ficha-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:8px;transition:all .15s}
+.ficha-item:hover{border-color:var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.ficha-item.inativa{opacity:.55;background:#fafafa}
+
+/* Resumo */
+.ficha-resumo{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.resumo-bloco{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+.resumo-bloco h3{font-size:14px;font-weight:700;color:#1e293b;margin:0 0 14px}
+.resumo-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:13px;color:#475569}
+.resumo-grid strong{color:#1e293b;font-weight:600}
+.resumo-obs{margin-top:12px;padding:10px 12px;background:#f8fafc;border-left:3px solid var(--accent);border-radius:4px;font-size:12px;color:#475569}
+.resumo-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.resumo-stat{padding:14px;background:#f8fafc;border-radius:8px;text-align:center;border:1px solid transparent}
+.resumo-stat.alerta{background:#fef2f2;border-color:#fecaca}
+.resumo-stat-num{font-size:28px;font-weight:700;color:#1e293b;line-height:1}
+.resumo-stat.alerta .resumo-stat-num{color:#dc2626}
+.resumo-stat-label{font-size:11px;color:var(--ink-soft);margin-top:6px;line-height:1.3}
+
+/* Item de histórico */
+.ficha-historico-item{display:flex;gap:14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px}
+
+/* Linha clicável na tabela de lojas locadas */
+.tbl-ocup-clicavel{cursor:pointer;transition:background .15s}
+.tbl-ocup-clicavel:hover{background:#fff7e6 !important}
+.tbl-ocup-clicavel:hover td{background:transparent !important}
+
+@media (max-width:768px){
+  .ficha-kpis{grid-template-columns:repeat(2,1fr)}
+  .ficha-resumo{grid-template-columns:1fr}
+  .resumo-grid{grid-template-columns:1fr}
+  .ficha-header-titulo{font-size:17px}
 }

@@ -14,6 +14,7 @@ import {
   LABELS_GARANTIA, LABELS_STATUS_PROPOSTA, REF_RSM
 } from './utils.js';
 import { abrirFormContrato } from './forms-contrato.js';
+import { abrirFichaLoja, getFichaLojaAtiva } from './ficha-loja.js';
 import { abrirFormProposta } from './forms-proposta.js';
 import { abrirFormLead } from './forms-lead.js';
 import { renderPlanta } from './planta-view.js';
@@ -161,8 +162,15 @@ function renderMix(contratos, inquilinos) {
 // Tabela Ocupadas
 // ---------------------------------------------------------------------
 async function renderTabelaOcupadas(contratos, lojas) {
-  document.getElementById('ocupadas-titulo').textContent = `Lojas ocupadas (${contratos.reduce((s,c)=>s+(c.lojas?.length||0),0)} unidades · ${contratos.length} inquilinos)`;
+  // Se há ficha de loja ativa, ela já renderiza dentro do card — pula a tabela
+  if (getFichaLojaAtiva()) {
+    abrirFichaLoja(getFichaLojaAtiva());
+    return;
+  }
+  const tituloEl = document.getElementById('ocupadas-titulo');
+  if (tituloEl) tituloEl.textContent = `Lojas locadas (${contratos.reduce((s,c)=>s+(c.lojas?.length||0),0)} unidades · ${contratos.length} inquilinos)`;
   const tbl = document.getElementById('tbl-ocup');
+  if (!tbl) return; // ficha pode ter substituído o conteúdo
   tbl.innerHTML = '';
   const sorted = [...contratos].sort((a,b) => Number(a.lojas?.[0]||0) - Number(b.lojas?.[0]||0));
   // mapa codigo -> area_privativa para somar rápido
@@ -196,7 +204,7 @@ async function renderTabelaOcupadas(contratos, lojas) {
       ? '<br><span style="font-size:11px;color:var(--ink-soft)">' + (c.lojas || []).map(cod => 'L' + cod + '=' + (areaByCodigo[cod] || '?') + 'm²').join(' · ') + '</span>'
       : '';
 
-    const tr = el('tr', {}, );
+    const tr = el('tr', { className: 'tbl-ocup-clicavel', 'data-abrir-ficha': c.id });
     tr.innerHTML = `
       <td><strong>${(c.lojas||[]).join(', ')}</strong><br>${status}</td>
       <td>
@@ -213,11 +221,10 @@ async function renderTabelaOcupadas(contratos, lojas) {
       <td><span class="badge idx">${c.indice_reajuste}</span></td>
       <td style="font-size:12px;color:var(--ink-soft)">${LABELS_GARANTIA[c.tipo_garantia]}${c.detalhes_garantia ? '<br>' + c.detalhes_garantia : ''}</td>
       <td style="font-size:12px">${c.data_inicio}<br><span style="color:var(--ink-soft)">→ ${termino}</span></td>
-      <td>
-        ${btnDocs}
+      <td style="text-align:center">
+        <span style="color:var(--accent);font-weight:600;font-size:12px">Abrir ficha →</span>
         <br>
-        <button class="btn ghost sm" data-edit="${c.id}">✏️ editar</button>
-        <button class="btn ghost sm" data-encerrar="${c.id}">🗑 encerrar</button>
+        <span style="font-size:10px;color:var(--ink-soft)">${totalDocs} doc(s)</span>
       </td>
     `;
     tbl.appendChild(tr);
@@ -229,29 +236,9 @@ async function renderTabelaOcupadas(contratos, lojas) {
     }
   }
 
-  // Listeners
-  tbl.querySelectorAll('[data-docs]').forEach(btn => {
-    btn.addEventListener('click', () => abrirModalDocumentos(btn.dataset.docs));
-  });
-  tbl.querySelectorAll('[data-edit]').forEach(btn => {
-    btn.addEventListener('click', () => abrirFormContrato(btn.dataset.edit));
-  });
-  tbl.querySelectorAll('[data-encerrar]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const motivo = await promptCustom({
-        titulo: 'Encerrar contrato',
-        mensagem: 'Informe o motivo do encerramento. Este texto fica registrado no histórico.',
-        label: 'Motivo do encerramento',
-        placeholder: 'Ex: Inquilino solicitou rescisão antecipada',
-        multiline: true,
-        rows: 3,
-        confirmLabel: 'Encerrar contrato'
-      });
-      if (!motivo) return;
-      await encerrarContrato(btn.dataset.encerrar, motivo);
-      mostrarToast('Contrato encerrado');
-      await renderTudo();
-    });
+  // Linha inteira clicável → abre a ficha completa da loja
+  tbl.querySelectorAll('[data-abrir-ficha]').forEach(tr => {
+    tr.addEventListener('click', () => abrirFichaLoja(tr.dataset.abrirFicha));
   });
 }
 
@@ -983,6 +970,7 @@ function renderLeads(leads) {
 // =====================================================================
 // Modal "Documentos do contrato" — lista PDFs + documentos vinculados
 // =====================================================================
+
 async function abrirModalDocumentos(contratoId) {
   const [arquivos, documentos] = await Promise.all([
     getArquivos('contrato', contratoId).catch(() => []),
