@@ -949,13 +949,13 @@ async function reextrairClausulas(contratoId) {
     const resp = await fetch(url);
     const buf = await resp.arrayBuffer();
     const file = new File([new Blob([buf], { type: 'application/pdf' })], pdf.nome_original || 'contrato.pdf', { type: 'application/pdf' });
-    const { extrairContratoDoPDF } = await import('./claude.js');
-    const dados = await extrairContratoDoPDF(file);
-    if (!dados || !dados.clausulas_principais) {
+    const { extrairClausulasDoPDF } = await import('./claude.js');
+    const clausulas = await extrairClausulasDoPDF(file);
+    if (!clausulas || typeof clausulas !== 'object') {
       mostrarToast('IA não retornou cláusulas. Tente novamente.', 'error');
       return;
     }
-    await saveContrato({ id: contratoId, clausulas_principais: dados.clausulas_principais });
+    await saveContrato({ id: contratoId, clausulas_principais: clausulas });
     mostrarToast('✓ Cláusulas extraídas e salvas!', 'success');
     renderFicha();
   } catch (err) {
