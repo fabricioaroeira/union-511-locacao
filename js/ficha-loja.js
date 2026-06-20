@@ -6,7 +6,8 @@ import { el, fmtBR, parseBR, addMonths, mesesEntre, formatMoney, LABELS_GARANTIA
 import {
   getContrato, getArquivos, getDocumentosByContrato, TIPOS_DOCUMENTO,
   getGestoesPorContrato, atualizarGestaoAtivo, getHistoricoContrato,
-  getInquilinos, getLojasStatus, saveContrato
+  getInquilinos, getLojasStatus, saveContrato,
+  getAnexosContrato
 } from './data-layer.js';
 import { abrirFormContrato } from './forms-contrato.js';
 import { campo, lojasPicker } from './modal.js';
@@ -96,10 +97,9 @@ async function renderFicha() {
   card.innerHTML = '<div style="padding:60px;text-align:center;color:var(--ink-soft)">⏳ Carregando ficha da loja...</div>';
 
   try {
-    const [contrato, arquivos, documentos, gestoes, historico] = await Promise.all([
+    const [contrato, anexos, gestoes, historico] = await Promise.all([
       getContrato(_contratoAtivo),
-      getArquivos('contrato', _contratoAtivo).catch(() => []),
-      getDocumentosByContrato(_contratoAtivo).catch(() => []),
+      getAnexosContrato(_contratoAtivo).catch(() => []),
       getGestoesPorContrato(_contratoAtivo).catch(() => []),
       getHistoricoContrato(_contratoAtivo).catch(() => [])
     ]);
@@ -110,7 +110,7 @@ async function renderFicha() {
     }
 
     card.innerHTML = '';
-    card.appendChild(montarFicha(contrato, { arquivos, documentos, gestoes, historico }));
+    card.appendChild(montarFicha(contrato, { anexos, gestoes, historico }));
   } catch (err) {
     console.error('Erro ao montar ficha:', err);
     card.innerHTML = '<div style="padding:40px;color:#991b1b">Erro: ' + escapeHtml(err.message) + '</div>';
@@ -137,13 +137,13 @@ function montarFicha(contrato, dados) {
 
   // ============== TABS ==============
   const tabBar = el('div', { className: 'ficha-tabs' });
+  const totalAnexos = (dados.anexos || []).length;
   const tabs = [
-    { id: 'resumo',     label: '📊 Resumo' },
-    { id: 'dados',      label: '📝 Dados do contrato' },
-    { id: 'documentos', label: '📄 Documentos (' + dados.documentos.length + ')' },
-    { id: 'gestoes',    label: '🤖 Gestões (' + dados.gestoes.filter(g => g.ativo).length + ')' },
-    { id: 'arquivos',   label: '📎 Arquivos (' + dados.arquivos.length + ')' },
-    { id: 'historico',  label: '🕐 Histórico (' + dados.historico.length + ')' }
+    { id: 'resumo',    label: '📊 Resumo' },
+    { id: 'dados',     label: '📝 Dados do contrato' },
+    { id: 'anexos',    label: '📄 Anexos (' + totalAnexos + ')' },
+    { id: 'gestoes',   label: '🤖 Gestões (' + dados.gestoes.filter(g => g.ativo).length + ')' },
+    { id: 'historico', label: '🕐 Histórico (' + dados.historico.length + ')' }
   ];
 
   const conteudo = el('div', { className: 'ficha-conteudo' });
@@ -231,12 +231,10 @@ function renderConteudoAba(container, aba, contrato, dados) {
     container.appendChild(renderResumo(contrato, dados));
   } else if (aba === 'dados') {
     container.appendChild(renderAbaDados(contrato));
-  } else if (aba === 'documentos') {
-    container.appendChild(renderListaDocumentos(dados.documentos, contrato.id));
+  } else if (aba === 'anexos') {
+    container.appendChild(renderListaAnexos(dados.anexos, contrato.id));
   } else if (aba === 'gestoes') {
     container.appendChild(renderListaGestoes(dados.gestoes, contrato.id));
-  } else if (aba === 'arquivos') {
-    container.appendChild(renderListaArquivos(dados.arquivos, contrato.id));
   } else if (aba === 'historico') {
     container.appendChild(renderListaHistorico(dados.historico));
   }
@@ -283,12 +281,12 @@ function renderResumo(c, dados) {
         <div class="resumo-stat-label">gestão(ões) atrasada(s)</div>
       </div>
       <div class="resumo-stat">
-        <div class="resumo-stat-num">${dados.documentos.length}</div>
-        <div class="resumo-stat-label">documento(s) cadastrado(s)</div>
+        <div class="resumo-stat-num">${(dados.anexos || []).length}</div>
+        <div class="resumo-stat-label">anexo(s) cadastrado(s)</div>
       </div>
       <div class="resumo-stat">
-        <div class="resumo-stat-num">${dados.arquivos.length}</div>
-        <div class="resumo-stat-label">arquivo(s) anexado(s)</div>
+        <div class="resumo-stat-num">${(dados.anexos || []).filter(a => a.data_validade).length}</div>
+        <div class="resumo-stat-label">com data de validade</div>
       </div>
       <div class="resumo-stat">
         <div class="resumo-stat-num">${dados.historico.length}</div>
@@ -475,33 +473,91 @@ function montarFormDados(c, inquilinos, lojasStatus) {
 // ABA: DOCUMENTOS / GESTÕES / ARQUIVOS / HISTÓRICO (restantes)
 // =====================================================================
 
-function renderListaDocumentos(documentos, contratoId) {
-  const div = el('div', { className: 'ficha-bloco' });
-  div.innerHTML = '<h3>📄 Documentos cadastrados</h3>';
+// Mapa de categorias unificadas (cobre tanto arquivos quanto documentos)
+const LABEL_CATEGORIA = {
+  // Categorias da tabela arquivos
+  contrato_assinado: 'Contrato assinado',
+  aditivo: 'Aditivo contratual',
+  termo: 'Termo',
+  laudo: 'Laudo',
+  fianca: 'Documento de garantia',
+  documentos_pessoais: 'Documentos pessoais',
+  comprovante: 'Comprovante',
+  planta: 'Planta',
+  outro: 'Outro',
+  // Tipos da tabela documentos_contrato (mantém os já cadastrados)
+  seguro_fianca: 'Seguro fiança',
+  apolice_seguro: 'Apólice de seguro',
+  avcb: 'AVCB',
+  alvara: 'Alvará',
+  certidao: 'Certidão',
+  habite_se: 'Habite-se'
+};
 
-  if (!documentos || documentos.length === 0) {
-    div.innerHTML += '<div class="ficha-vazio">Nenhum documento cadastrado. Adicione apólice de seguro, AVCB, certidões e outros documentos pelo formulário de edição do contrato.</div>';
+const ICONE_CATEGORIA = {
+  contrato_assinado: '📜', aditivo: '📝', termo: '📋', laudo: '🧾',
+  fianca: '🛡️', documentos_pessoais: '🪪', comprovante: '💵',
+  planta: '🗺️', outro: '📄',
+  seguro_fianca: '🛡️', apolice_seguro: '🔥', avcb: '🚒',
+  alvara: '🏛️', certidao: '📃', habite_se: '🏠'
+};
+
+function renderListaAnexos(anexos, contratoId) {
+  const div = el('div', { className: 'ficha-bloco' });
+  const totalComValidade = (anexos || []).filter(a => a.data_validade).length;
+  div.innerHTML =
+    '<h3>📄 Anexos do contrato</h3>' +
+    '<p style="color:var(--ink-soft);font-size:12px;margin-bottom:10px">' +
+      'Contratos, aditivos, apólices, certidões e outros documentos. ' +
+      'Itens com <strong>data de validade</strong> geram alertas automáticos.' +
+      (totalComValidade > 0 ? ' <em>· ' + totalComValidade + ' com validade cadastrada</em>' : '') +
+    '</p>';
+
+  if (!anexos || anexos.length === 0) {
+    div.innerHTML += '<div class="ficha-vazio">Nenhum anexo cadastrado. Use o formulário do contrato para anexar PDFs (contrato, aditivos) ou cadastrar documentos com validade (apólice, AVCB, certidões).</div>';
   } else {
     const lista = el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:10px' });
-    documentos.forEach(d => {
-      const dias = diasAte(d.data_validade);
+    anexos.forEach(a => {
+      const dias = a.data_validade ? diasAte(a.data_validade) : null;
       const cor = corUrgencia(dias);
+      const icone = ICONE_CATEGORIA[a.categoria] || '📄';
+      const labelCat = LABEL_CATEGORIA[a.categoria] || a.categoria;
       const item = el('div', { className: 'ficha-item' });
+      const sub = a.fonte === 'documento'
+        ? (a.numero ? 'Nº ' + a.numero : '') + (a.observacoes ? ' · ' + a.observacoes : '')
+        : (a.nome_original || '') + (a.tamanho_bytes ? ' · ' + (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '');
       item.innerHTML = `
-        <div style="flex:1">
-          <div style="font-weight:600;color:var(--ink);font-size:13px">${escapeHtml(TIPOS_DOCUMENTO[d.tipo] || d.tipo)}</div>
-          <div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${escapeHtml(d.descricao || (d.numero ? 'Nº ' + d.numero : '—'))}</div>
+        <div style="font-size:22px;width:32px;text-align:center">${icone}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;color:var(--ink);font-size:13px">${escapeHtml(labelCat)}</div>
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sub) || '<em style="opacity:.6">—</em>'}</div>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:12px;color:var(--ink)">Vence ${d.data_validade ? new Date(d.data_validade).toLocaleDateString('pt-BR') : '—'}</div>
-          <div style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:${cor.bg};color:${cor.txt};margin-top:3px">${dias == null ? '—' : (dias < 0 ? 'Vencido ' + Math.abs(dias) + 'd' : 'Em ' + dias + 'd')}</div>
+        <div style="text-align:right;min-width:130px">
+          ${a.data_validade
+            ? '<div style="font-size:11px;color:var(--ink)">Vence ' + new Date(a.data_validade).toLocaleDateString('pt-BR') + '</div>' +
+              '<div style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:' + cor.bg + ';color:' + cor.txt + ';margin-top:3px">' +
+              (dias == null ? '—' : (dias < 0 ? 'Vencido ' + Math.abs(dias) + 'd' : 'Em ' + dias + 'd')) + '</div>'
+            : '<div style="font-size:10px;color:#94a3b8;font-style:italic">sem validade</div>'}
+          ${a.storage_path ? '<button type="button" class="btn outline sm" data-ver style="font-size:11px;margin-top:6px;padding:3px 10px">👁 Ver PDF</button>' : ''}
         </div>
       `;
+      const btnVer = item.querySelector('[data-ver]');
+      if (btnVer) {
+        btnVer.onclick = async () => {
+          try {
+            const url = await getArquivoUrl(a.storage_path);
+            if (url) window.open(url, '_blank');
+            else mostrarToast('Arquivo não encontrado', 'error');
+          } catch (err) {
+            mostrarToast('Erro: ' + err.message, 'error');
+          }
+        };
+      }
       lista.appendChild(item);
     });
     div.appendChild(lista);
   }
-  const btn = el('button', { type: 'button', className: 'btn ghost sm', style: 'margin-top:14px' }, '+ Gerenciar documentos');
+  const btn = el('button', { type: 'button', className: 'btn ghost sm', style: 'margin-top:14px' }, '+ Gerenciar anexos no formulário do contrato');
   btn.onclick = () => abrirFormContrato(contratoId);
   div.appendChild(btn);
   return div;
@@ -561,44 +617,7 @@ function renderListaGestoes(gestoes, contratoId) {
 // =====================================================================
 // ABA: ARQUIVOS (PDFs anexados)
 // =====================================================================
-function renderListaArquivos(arquivos, contratoId) {
-  const div = el('div', { className: 'ficha-bloco' });
-  div.innerHTML = '<h3>📎 Arquivos anexados</h3>';
-
-  if (!arquivos || arquivos.length === 0) {
-    div.innerHTML += '<div class="ficha-vazio">Nenhum arquivo anexado. Adicione PDFs (contrato assinado, aditivos, laudos) pelo formulário de edição.</div>';
-  } else {
-    const lista = el('div', { style: 'display:flex;flex-direction:column;gap:6px;margin-top:10px' });
-    const LABELS_CAT = { contrato_assinado:'Contrato', aditivo:'Aditivos', termo:'Termos', laudo:'Laudos', fianca:'Garantia', documentos_pessoais:'Documentos pessoais', comprovante:'Comprovante', planta:'Planta', outro:'Outros' };
-    arquivos.forEach(a => {
-      const tam = a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '';
-      const item = el('div', { className: 'ficha-item' });
-      item.innerHTML = `
-        <div style="font-size:22px">📄</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;color:var(--ink);font-size:13px">${escapeHtml(LABELS_CAT[a.categoria] || a.categoria || 'Arquivo')}</div>
-          <div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.nome_original || '')} ${tam ? '· ' + tam : ''}</div>
-        </div>
-        <button type="button" class="btn outline sm" data-ver style="font-size:11px">👁 Ver</button>
-      `;
-      item.querySelector('[data-ver]').onclick = async () => {
-        try {
-          const url = await getArquivoUrl(a.storage_path);
-          if (url) window.open(url, '_blank');
-          else mostrarToast('Arquivo não encontrado', 'error');
-        } catch (err) {
-          mostrarToast('Erro: ' + err.message, 'error');
-        }
-      };
-      lista.appendChild(item);
-    });
-    div.appendChild(lista);
-  }
-  const btn = el('button', { type: 'button', className: 'btn ghost sm', style: 'margin-top:14px' }, '+ Gerenciar arquivos');
-  btn.onclick = () => abrirFormContrato(contratoId);
-  div.appendChild(btn);
-  return div;
-}
+// (renderListaArquivos removida — substituída por renderListaAnexos unificada)
 
 // =====================================================================
 // ABA: HISTÓRICO de alterações

@@ -917,6 +917,53 @@ export async function deleteDocumento(id) {
 
 // Lista TODAS as gestões ativas (todos os contratos), com nome do inquilino
 // Usada no painel global de Alertas/Pendências
+// =====================================================================
+// ANEXOS UNIFICADOS — junta arquivos brutos + documentos com validade
+// Cada item devolvido tem a mesma estrutura, com flag `fonte`:
+//   fonte='arquivo'   → vem da tabela arquivos
+//   fonte='documento' → vem de documentos_contrato (tem data_validade)
+// =====================================================================
+export async function getAnexosContrato(contratoId) {
+  if (MOCK_MODE) return [];
+  const [arquivos, documentos] = await Promise.all([
+    getArquivos('contrato', contratoId).catch(() => []),
+    getDocumentosByContrato(contratoId).catch(() => [])
+  ]);
+  const fromArquivos = (arquivos || []).map(a => ({
+    id: a.id,
+    fonte: 'arquivo',
+    categoria: a.categoria || 'outro',
+    nome_original: a.nome_original,
+    tamanho_bytes: a.tamanho_bytes,
+    storage_path: a.storage_path,
+    numero: null,
+    data_emissao: null,
+    data_validade: null,
+    observacoes: null,
+    created_at: a.created_at
+  }));
+  const fromDocs = (documentos || []).map(d => ({
+    id: d.id,
+    fonte: 'documento',
+    categoria: d.tipo || 'outro',           // tipo do documento vira categoria
+    nome_original: d.descricao || d.numero || (TIPOS_DOCUMENTO[d.tipo] || d.tipo),
+    tamanho_bytes: null,
+    storage_path: d.arquivo_url || null,
+    numero: d.numero,
+    data_emissao: d.data_emissao,
+    data_validade: d.data_validade,         // ⚠️ ESSE é o campo que gera alerta
+    observacoes: d.observacoes,
+    created_at: d.created_at
+  }));
+  // Ordena: docs com validade próxima primeiro, depois arquivos por data
+  return [...fromDocs, ...fromArquivos].sort((a,b) => {
+    if (a.data_validade && b.data_validade) return new Date(a.data_validade) - new Date(b.data_validade);
+    if (a.data_validade) return -1;
+    if (b.data_validade) return 1;
+    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+  });
+}
+
 export async function getGestoesAtivas() {
   if (MOCK_MODE) return [];
   const supa = await getSupabase();
