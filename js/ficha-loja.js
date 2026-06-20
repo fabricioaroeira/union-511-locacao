@@ -317,6 +317,9 @@ function renderResumo(c, dados) {
   `;
   div.appendChild(bloco2);
 
+  // Bloco 3: Cláusulas-chave do contrato (lidas pela IA)
+  div.appendChild(montarBlocoClausulas(c));
+
   return div;
 }
 
@@ -828,4 +831,135 @@ function renderListaHistorico(historico) {
   });
   div.appendChild(lista);
   return div;
+}
+
+// =====================================================================
+// Cláusulas-chave do contrato (lidas pela IA) — bloco da aba Resumo
+// =====================================================================
+const CATEGORIAS_CLAUSULAS = [
+  {
+    chave: 'financeiras', titulo: '💰 Financeiras',
+    campos: [
+      { k: 'multa_moratoria',         l: 'Multa moratória (atraso)' },
+      { k: 'multa_descumprimento',    l: 'Multa por descumprimento' },
+      { k: 'indice_reajuste_detalhe', l: 'Índice de reajuste' }
+    ]
+  },
+  {
+    chave: 'garantia', titulo: '🛡️ Garantia',
+    campos: [
+      { k: 'tipo_detalhe',          l: 'Tipo / detalhe' },
+      { k: 'valor',                 l: 'Valor' },
+      { k: 'renovacao_automatica',  l: 'Renovação automática' }
+    ]
+  },
+  {
+    chave: 'uso_cessao', titulo: '🏪 Uso e cessão',
+    campos: [
+      { k: 'destinacao',     l: 'Destinação' },
+      { k: 'alteracao_uso',  l: 'Alteração de uso' },
+      { k: 'sublocacao',     l: 'Sublocação' },
+      { k: 'cessao',         l: 'Cessão' }
+    ]
+  },
+  {
+    chave: 'devolucao', titulo: '🚪 Devolução',
+    campos: [
+      { k: 'aviso_previo_dias',         l: 'Aviso prévio' },
+      { k: 'multa_rescisao_antecipada', l: 'Multa rescisão antecipada' },
+      { k: 'indenizacao_benfeitorias',  l: 'Indenização por benfeitorias' }
+    ]
+  },
+  {
+    chave: 'encargos', titulo: '💸 Encargos (quem paga)',
+    campos: [
+      { k: 'iptu',            l: 'IPTU' },
+      { k: 'condominio',      l: 'Condomínio' },
+      { k: 'agua_luz',        l: 'Água / Luz / Gás' },
+      { k: 'seguro_incendio', l: 'Seguro incêndio' }
+    ]
+  },
+  {
+    chave: 'renovacao', titulo: '🔄 Renovação',
+    campos: [
+      { k: 'renovacao_automatica',         l: 'Renovação automática' },
+      { k: 'acao_renovatoria_lei_8245',    l: 'Renovatória (Lei 8.245)' },
+      { k: 'prazo_notificacao_renovacao',  l: 'Prazo notificação' }
+    ]
+  }
+];
+
+function fmtClausulaValor(v) {
+  if (v === null || v === undefined || v === '') return '<em style="color:#94a3b8">—</em>';
+  if (v === true)  return '<span style="color:#16a34a;font-weight:600">Sim</span>';
+  if (v === false) return '<span style="color:#dc2626;font-weight:600">Não</span>';
+  if (typeof v === 'number') return String(v) + (String(v).length <= 3 ? ' dias' : '');
+  return escapeHtml(String(v));
+}
+
+function montarBlocoClausulas(c) {
+  const bloco = el('div', { className: 'resumo-bloco', style: 'grid-column:1/-1' });
+  const cp = c.clausulas_principais;
+  const cabecalho =
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+      '<h3 style="margin:0">📜 Cláusulas-chave (lidas pela IA)</h3>' +
+      '<button type="button" data-reextrair class="btn ghost sm" style="font-size:11px">🔄 Re-extrair com IA</button>' +
+    '</div>';
+  if (!cp || typeof cp !== 'object' || Object.keys(cp).length === 0) {
+    bloco.innerHTML = cabecalho +
+      '<div class="ficha-vazio" style="margin-top:8px">Cláusulas ainda não extraídas. Clique em <strong>"🔄 Re-extrair com IA"</strong> acima — a IA vai ler o PDF do contrato anexado e preencher.</div>';
+    bloco.querySelector('[data-reextrair]').onclick = () => reextrairClausulas(c.id);
+    return bloco;
+  }
+  let html = cabecalho + '<div class="clausulas-grid">';
+  CATEGORIAS_CLAUSULAS.forEach(cat => {
+    const dados = cp[cat.chave] || {};
+    const temAlgum = cat.campos.some(f => dados[f.k] !== null && dados[f.k] !== undefined && dados[f.k] !== '');
+    let itens = '';
+    if (temAlgum) {
+      itens = '<div class="clausula-cat-itens">';
+      cat.campos.forEach(f => {
+        itens += '<div class="clausula-item"><span class="clausula-label">' + escapeHtml(f.l) + ':</span> <span class="clausula-valor">' + fmtClausulaValor(dados[f.k]) + '</span></div>';
+      });
+      itens += '</div>';
+    } else {
+      itens = '<div class="clausula-vazia">—</div>';
+    }
+    html += '<div class="clausula-cat"><div class="clausula-cat-titulo">' + cat.titulo + '</div>' + itens + '</div>';
+  });
+  html += '</div>';
+  bloco.innerHTML = html;
+  const btn = bloco.querySelector('[data-reextrair]');
+  if (btn) btn.onclick = () => reextrairClausulas(c.id);
+  return bloco;
+}
+
+// Re-extrai cláusulas do PDF anexado via IA e salva
+async function reextrairClausulas(contratoId) {
+  try {
+    const arquivos = await getArquivos('contrato', contratoId);
+    const pdf = (arquivos || []).find(a => a.categoria === 'contrato_assinado') ||
+                (arquivos || []).find(a => /\.pdf$/i.test(a.nome_original || ''));
+    if (!pdf) {
+      mostrarToast('Nenhum PDF de contrato anexado. Anexe primeiro na aba Anexos.', 'error');
+      return;
+    }
+    mostrarToast('🤖 Lendo PDF com IA... aguarde ~1min', 'info');
+    const url = await getArquivoUrl(pdf.storage_path);
+    const resp = await fetch(url);
+    const buf = await resp.arrayBuffer();
+    const file = new File([new Blob([buf], { type: 'application/pdf' })], pdf.nome_original || 'contrato.pdf', { type: 'application/pdf' });
+    const { extrairContratoDoPDF } = await import('./claude.js');
+    const dados = await extrairContratoDoPDF(file);
+    if (!dados || !dados.clausulas_principais) {
+      mostrarToast('IA não retornou cláusulas. Tente novamente.', 'error');
+      return;
+    }
+    await saveContrato({ id: contratoId, clausulas_principais: dados.clausulas_principais });
+    mostrarToast('✓ Cláusulas extraídas e salvas!', 'success');
+    renderFicha();
+  } catch (err) {
+    console.error('Erro na re-extração:', err);
+    mostrarToast('Erro: ' + err.message, 'error');
+  }
 }

@@ -585,3 +585,13 @@ tr:hover td{background:#fafbfc}
   .ficha-form-acoes{flex-direction:column-reverse}
   .ficha-form-acoes .btn{width:100%}
 }
+
+/* Cláusulas-chave do contrato (aba Resumo) */
+.clausulas-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:10px}
+.clausula-cat{background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.clausula-cat-titulo{font-size:12px;font-weight:700;color:#1e293b;margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px}
+.clausula-cat-itens{display:flex;flex-direction:column;gap:6px}
+.clausula-item{font-size:12px;line-height:1.5;color:#334155}
+.clausula-label{font-weight:600;color:#64748b}
+.clausula-valor{color:#1e293b}
+.clausula-vazia{font-size:11px;color:#cbd5e1;font-style:italic}
