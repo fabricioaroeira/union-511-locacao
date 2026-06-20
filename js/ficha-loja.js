@@ -469,6 +469,7 @@ function montarFormDados(c, inquilinos, lojasStatus) {
   };
 
   return form;
+}
 
 // =====================================================================
 // ABA: DOCUMENTOS / GESTÕES / ARQUIVOS / HISTÓRICO (restantes)
