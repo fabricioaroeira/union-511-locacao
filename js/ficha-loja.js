@@ -667,7 +667,10 @@ function montarCardGestao(g, contratoId) {
       ocorContainer.innerHTML = '';
       ocorContainer.appendChild(montarBlocoOcorrencias(ocorrencias, g, contratoId, ocorContainer));
     } catch (err) {
-      ocorContainer.innerHTML = '<div style="color:#991b1b;font-size:11px">Erro: ' + escapeHtml(err.message) + '</div>';
+      const msg = /Could not find the table|schema cache/i.test(err.message)
+        ? '⚙️ Sistema de ciclos ainda não ativado. Rode SQL_GESTAO_OCORRENCIAS.sql no Supabase.'
+        : 'Erro: ' + escapeHtml(err.message);
+      ocorContainer.innerHTML = '<div style="color:var(--ink-soft);font-size:11px;font-style:italic;padding:6px 0">' + msg + '</div>';
     }
   })();
 

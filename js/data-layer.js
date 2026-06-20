@@ -928,7 +928,7 @@ export async function getOcorrenciasPendentesGlobal() {
     .eq('status', 'pendente')
     .order('data_prevista', { ascending: true });
   if (error) {
-    if (/relation .* does not exist/i.test(error.message)) return [];
+    if (/relation .* does not exist|Could not find the table|schema cache/i.test(error.message)) return [];
     throw new Error('Erro ao carregar ocorrências: ' + error.message);
   }
   return (data || []).map(o => ({
@@ -1031,7 +1031,7 @@ export async function getOcorrenciasPorGestao(gestaoId) {
     .eq('gestao_id', gestaoId)
     .order('data_prevista', { ascending: true });
   if (error) {
-    if (/relation .* does not exist/i.test(error.message)) return [];
+    if (/relation .* does not exist|Could not find the table|schema cache/i.test(error.message)) return [];
     throw new Error('Erro ao carregar ocorrências: ' + error.message);
   }
   return (data || []).map(o => ({ ...o, arquivo: o.arquivos || null }));
@@ -1091,7 +1091,7 @@ export async function getHistoricoContrato(contratoId) {
     .order('alterado_em', { ascending: false });
   if (error) {
     // Se a tabela ainda não foi criada, devolve vazio em vez de quebrar
-    if (/relation .* does not exist/i.test(error.message)) return [];
+    if (/relation .* does not exist|Could not find the table|schema cache/i.test(error.message)) return [];
     throw new Error('Erro ao carregar histórico: ' + error.message);
   }
   return data || [];
@@ -1183,4 +1183,6 @@ export async function atualizarAtivoUsuario(userId, ativo) {
   const supa = await getSupabase();
   const { error } = await supa.from('perfis').update({ ativo }).eq('user_id', userId);
   if (error) throw new Error('Erro ao atualizar status: ' + error.message);
+
 }
+
