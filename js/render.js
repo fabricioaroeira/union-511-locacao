@@ -162,7 +162,7 @@ function renderMix(contratos, inquilinos) {
 // Tabela Ocupadas
 // ---------------------------------------------------------------------
 async function renderTabelaOcupadas(contratos, lojas) {
-  // Se há ficha de loja ativa, ela já renderiza dentro do card — pula a tabela
+  // Se ficha de loja está aberta, ela já renderiza dentro do card — pula tabela
   if (getFichaLojaAtiva()) {
     abrirFichaLoja(getFichaLojaAtiva());
     return;
@@ -170,7 +170,7 @@ async function renderTabelaOcupadas(contratos, lojas) {
   const tituloEl = document.getElementById('ocupadas-titulo');
   if (tituloEl) tituloEl.textContent = `Lojas locadas (${contratos.reduce((s,c)=>s+(c.lojas?.length||0),0)} unidades · ${contratos.length} inquilinos)`;
   const tbl = document.getElementById('tbl-ocup');
-  if (!tbl) return; // ficha pode ter substituído o conteúdo
+  if (!tbl) return;
   tbl.innerHTML = '';
   const sorted = [...contratos].sort((a,b) => Number(a.lojas?.[0]||0) - Number(b.lojas?.[0]||0));
   // mapa codigo -> area_privativa para somar rápido
@@ -221,10 +221,9 @@ async function renderTabelaOcupadas(contratos, lojas) {
       <td><span class="badge idx">${c.indice_reajuste}</span></td>
       <td style="font-size:12px;color:var(--ink-soft)">${LABELS_GARANTIA[c.tipo_garantia]}${c.detalhes_garantia ? '<br>' + c.detalhes_garantia : ''}</td>
       <td style="font-size:12px">${c.data_inicio}<br><span style="color:var(--ink-soft)">→ ${termino}</span></td>
-      <td style="text-align:center">
-        <span style="color:var(--accent);font-weight:600;font-size:12px">Abrir ficha →</span>
-        <br>
-        <span style="font-size:10px;color:var(--ink-soft)">${totalDocs} doc(s)</span>
+      <td style="text-align:center;padding:10px 8px">
+        <div style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff7e6;border:1px solid #fde6c2;border-radius:20px;color:var(--accent);font-weight:600;font-size:11px;white-space:nowrap">Abrir ficha <span style="font-size:14px;line-height:1">&rarr;</span></div>
+        <div style="font-size:10px;color:var(--ink-soft);margin-top:4px">${totalDocs} doc(s)</div>
       </td>
     `;
     tbl.appendChild(tr);
@@ -236,7 +235,7 @@ async function renderTabelaOcupadas(contratos, lojas) {
     }
   }
 
-  // Linha inteira clicável → abre a ficha completa da loja
+  // Linha inteira clicável → abre ficha completa da loja
   tbl.querySelectorAll('[data-abrir-ficha]').forEach(tr => {
     tr.addEventListener('click', () => abrirFichaLoja(tr.dataset.abrirFicha));
   });
@@ -970,7 +969,6 @@ function renderLeads(leads) {
 // =====================================================================
 // Modal "Documentos do contrato" — lista PDFs + documentos vinculados
 // =====================================================================
-
 async function abrirModalDocumentos(contratoId) {
   const [arquivos, documentos] = await Promise.all([
     getArquivos('contrato', contratoId).catch(() => []),

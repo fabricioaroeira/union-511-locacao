@@ -509,7 +509,7 @@ tr:hover td{background:#fafbfc}
 
 .gestao-card .gtitulo{font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;line-height:1.3}
 .gestao-card .gdesc{font-size:12px;color:#64748b;line-height:1.5;margin-bottom:4px}
-.gestao-card .gclausula{font-size:11px;color:#94a3b8;margin-top:6px;font-style:italic;display:inline-
+.gestao-card .gclausula{font-size:11px;color:#94a3b8;margin-top:6px;font-style:italic;display:inline-block;background:#f8fafc;padding:2px 8px;border-radius:4px}
 /* =====================================================================
    Ficha da loja (substitui a lista quando uma loja é clicada)
    ===================================================================== */
@@ -561,10 +561,14 @@ tr:hover td{background:#fafbfc}
 /* Item de histórico */
 .ficha-historico-item{display:flex;gap:14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px}
 
-/* Linha clicável na tabela de lojas locadas */
-.tbl-ocup-clicavel{cursor:pointer;transition:background .15s}
-.tbl-ocup-clicavel:hover{background:#fff7e6 !important}
-.tbl-ocup-clicavel:hover td{background:transparent !important}
+/* Linha clicável na tabela de lojas locadas — affordance clara */
+.tbl-ocup-clicavel{cursor:pointer;transition:all .15s;position:relative}
+.tbl-ocup-clicavel td{transition:background .15s, border-color .15s}
+.tbl-ocup-clicavel td:first-child{border-left:3px solid transparent}
+.tbl-ocup-clicavel:hover td{background:#fff7e6 !important}
+.tbl-ocup-clicavel:hover td:first-child{border-left-color:var(--accent)}
+.tbl-ocup-clicavel:hover td:last-child{color:var(--accent);font-weight:700}
+.tbl-ocup-clicavel:active td{background:#fef0d8 !important}
 
 @media (max-width:768px){
   .ficha-kpis{grid-template-columns:repeat(2,1fr)}
