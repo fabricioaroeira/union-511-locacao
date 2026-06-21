@@ -1183,6 +1183,47 @@ export async function atualizarAtivoUsuario(userId, ativo) {
   const supa = await getSupabase();
   const { error } = await supa.from('perfis').update({ ativo }).eq('user_id', userId);
   if (error) throw new Error('Erro ao atualizar status: ' + error.message);
-
 }
 
+// =====================================================================
+// Operações privilegiadas via Edge Function admin-users
+// (precisam de service_role no servidor; front só chama)
+// =====================================================================
+async function chamarAdminUsers(payload) {
+  const supa = await getSupabase();
+  const { data: sess } = await supa.auth.getSession();
+  const token = sess?.session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'apikey': SUPABASE_ANON_KEY
+    },
+    body: JSON.stringify(payload)
+  });
+  const j = await r.json().catch(() => ({ error: 'Resposta inválida' }));
+  if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+export async function criarUsuario({ email, password, nome, role }) {
+  if (MOCK_MODE) return { userId: 'mock-' + Date.now() };
+  return chamarAdminUsers({ mode: 'create_user', email, password, nome, role });
+}
+
+export async function alterarSenhaUsuario(userId, password) {
+  if (MOCK_MODE) return;
+  return chamarAdminUsers({ mode: 'update_password', userId, password });
+}
+
+export async function alterarNomeUsuario(userId, nome) {
+  if (MOCK_MODE) return;
+  return chamarAdminUsers({ mode: 'update_name', userId, nome });
+}
+
+export async function excluirUsuario(userId) {
+  if (MOCK_MODE) return;
+  return chamarAdminUsers({ mode: 'delete_user', userId });
+}
