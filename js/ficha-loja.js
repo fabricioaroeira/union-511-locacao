@@ -118,11 +118,12 @@ async function renderFicha() {
   card.innerHTML = '<div style="padding:60px;text-align:center;color:var(--ink-soft)">⏳ Carregando ficha da loja...</div>';
 
   try {
-    const [contrato, anexos, gestoes, historico] = await Promise.all([
+    const [contrato, anexos, gestoes, historico, lojasStatus] = await Promise.all([
       getContrato(_contratoAtivo),
       getAnexosContrato(_contratoAtivo).catch(() => []),
       getGestoesPorContrato(_contratoAtivo).catch(() => []),
-      getHistoricoContrato(_contratoAtivo).catch(() => [])
+      getHistoricoContrato(_contratoAtivo).catch(() => []),
+      getLojasStatus().catch(() => [])
     ]);
 
     if (!contrato) {
@@ -131,7 +132,7 @@ async function renderFicha() {
     }
 
     card.innerHTML = '';
-    card.appendChild(montarFicha(contrato, { anexos, gestoes, historico }));
+    card.appendChild(montarFicha(contrato, { anexos, gestoes, historico, lojasStatus }));
   } catch (err) {
     console.error('Erro ao montar ficha:', err);
     card.innerHTML = '<div style="padding:40px;color:#991b1b">Erro: ' + escapeHtml(err.message) + '</div>';
@@ -291,6 +292,24 @@ function renderResumo(c, dados) {
     ${c.observacoes ? '<div class="resumo-obs"><strong>Observações:</strong><br>' + escapeHtml(c.observacoes) + '</div>' : ''}
   `;
   div.appendChild(bloco1);
+
+  // Bloco extra: características das lojas (exaustão)
+  const lojasCodigos = c.lojas || [];
+  const lojasInfo = (dados.lojasStatus || []).filter(l => lojasCodigos.includes(l.codigo));
+  if (lojasInfo.length > 0) {
+    const blocoLojas = el('div', { className: 'resumo-bloco' });
+    const itens = lojasInfo.map(l => {
+      const badge = l.tem_exaustao
+        ? '<span class="badge" style="background:#dcfce7;color:#15803d">Sim</span>'
+        : '<span class="badge" style="background:#f1f5f9;color:#64748b">Não</span>';
+      return `<div><strong>Loja ${escapeHtml(l.codigo)}:</strong> Exaustão ${badge}</div>`;
+    }).join('');
+    blocoLojas.innerHTML = `
+      <h3>🏪 Características das lojas</h3>
+      <div class="resumo-grid">${itens}</div>
+    `;
+    div.appendChild(blocoLojas);
+  }
 
   // Bloco 2: situação atual
   const bloco2 = el('div', { className: 'resumo-bloco' });

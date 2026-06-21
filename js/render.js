@@ -281,8 +281,11 @@ function renderTabelaDisponiveis(lojas, propostas) {
       area = l.area_privativa ? formatArea(l.area_privativa) : '<span style="color:#94a3b8">a carregar</span>';
       pipeline = '<span style="color:#94a3b8">—</span>';
     }
+    const exaustao = l.tem_exaustao
+      ? '<span class="badge" style="background:#dcfce7;color:#15803d">Sim</span>'
+      : '<span class="badge" style="background:#f1f5f9;color:#64748b">Não</span>';
     const tr = el('tr');
-    tr.innerHTML = `<td><strong>${l.codigo}</strong></td><td>${badge}</td><td>${area}</td><td>${pipeline}</td>`;
+    tr.innerHTML = `<td><strong>${l.codigo}</strong></td><td>${badge}</td><td>${area}</td><td>${exaustao}</td><td>${pipeline}</td>`;
     tbl.appendChild(tr);
   });
 }
