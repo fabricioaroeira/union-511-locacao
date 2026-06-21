@@ -39,11 +39,74 @@ export async function abrirFormContrato(id = null, opts = {}) {
   sec1.appendChild(el('div', { className: 'form-section-title' }, 'Inquilino'));
   const inqOptions = [
     { value: '', label: '- Selecione -' },
+    { value: '__NOVO__', label: '+ Cadastrar novo inquilino' },
     ...inquilinos.map(i => ({ value: i.id, label: (i.nome_fantasia ? i.nome_fantasia + ' - ' : '') + i.razao_social + ' (' + i.documento + ')' }))
   ];
   const inqGrid = el('div', { className: 'form-grid' });
   inqGrid.appendChild(campo({ name: 'inquilino_id', label: 'Inquilino', type: 'select', options: inqOptions, value: dados.inquilino_id || '', required: true, full: true }));
   sec1.appendChild(inqGrid);
+
+  // Sub-form inline pra cadastrar inquilino novo (aparece quando '__NOVO__' é escolhido)
+  const subForm = el('div', {
+    style: { display: 'none', marginTop: '14px', padding: '14px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }
+  });
+  subForm.innerHTML = `
+    <div style="font-size:12px;color:#0369a1;font-weight:600;margin-bottom:10px">📝 Dados do novo inquilino (campos essenciais — você pode completar depois na ficha do inquilino)</div>
+    <div class="form-grid">
+      <div class="form-field"><label>Tipo *</label>
+        <select data-novo="tipo" required>
+          <option value="PJ">Jurídica (PJ)</option>
+          <option value="PF">Física (PF)</option>
+        </select>
+      </div>
+      <div class="form-field"><label>CNPJ / CPF *</label>
+        <input type="text" data-novo="documento" placeholder="00.000.000/0000-00 ou 000.000.000-00">
+      </div>
+      <div class="form-field full"><label>Razão social / Nome completo *</label>
+        <input type="text" data-novo="razao_social" placeholder="Razão social ou nome completo">
+      </div>
+      <div class="form-field full"><label>Nome fantasia (opcional)</label>
+        <input type="text" data-novo="nome_fantasia" placeholder="Nome comercial/marca">
+      </div>
+      <div class="form-field"><label>Segmento</label>
+        <input type="text" data-novo="segmento" placeholder="Ex: Farmácia, Estética">
+      </div>
+      <div class="form-field"><label>Telefone</label>
+        <input type="text" data-novo="telefone">
+      </div>
+      <div class="form-field full"><label>Email</label>
+        <input type="email" data-novo="email">
+      </div>
+    </div>
+  `;
+  sec1.appendChild(subForm);
+
+  // Atualiza body._novoInquilino conforme o user digita
+  const coletarNovoInq = () => {
+    const obj = {};
+    subForm.querySelectorAll('[data-novo]').forEach(inp => {
+      const k = inp.dataset.novo;
+      const v = (inp.value || '').trim();
+      if (v) obj[k] = v;
+    });
+    body._novoInquilino = (obj.razao_social && obj.documento) ? obj : null;
+  };
+  subForm.addEventListener('input', coletarNovoInq);
+  subForm.addEventListener('change', coletarNovoInq);
+
+  // Mostrar/esconder sub-form quando '__NOVO__' for selecionado
+  const selInq = inqGrid.querySelector('[name="inquilino_id"]');
+  const toggleSubForm = () => {
+    if (selInq.value === '__NOVO__') {
+      subForm.style.display = 'block';
+      selInq.removeAttribute('required'); // o validador de novo inquilino é dentro do submit
+    } else {
+      subForm.style.display = 'none';
+      body._novoInquilino = null;
+      selInq.setAttribute('required', 'true');
+    }
+  };
+  selInq.addEventListener('change', toggleSubForm);
   body.appendChild(sec1);
 
   // Lojas
@@ -360,7 +423,10 @@ export async function abrirFormContrato(id = null, opts = {}) {
         if (pdfFile.type !== 'application/pdf') throw new Error('O arquivo precisa ser um PDF.');
       }
       let inquilinoId = fd.get('inquilino_id');
-      if (inquilinoId === '__NOVO__' && body._novoInquilino) {
+      if (inquilinoId === '__NOVO__') {
+        if (!body._novoInquilino || !body._novoInquilino.razao_social || !body._novoInquilino.documento) {
+          throw new Error('Pra cadastrar um novo inquilino, preencha ao menos: tipo, razão social/nome e CNPJ/CPF.');
+        }
         const inqCriado = await saveInquilino(body._novoInquilino);
         if (!inqCriado?.id) throw new Error('Falha ao criar inquilino automaticamente');
         inquilinoId = inqCriado.id;
