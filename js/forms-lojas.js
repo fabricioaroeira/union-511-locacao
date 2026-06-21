@@ -13,13 +13,13 @@ export async function abrirFormAreasLojas() {
 
   body.appendChild(el('div', {
     style: { padding: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', marginBottom: '14px', fontSize: '12px', color: '#1e40af' }
-  }, '💡 Informe a área de cada loja em m² e marque se possui sistema de exaustão. Lojas em uso interno (02, 03, 49, 52) ficam bloqueadas.'));
+  }, '💡 Informe área, área do depósito (se houver) e marque se possui sistema de exaustão. Depósito vazio = loja não tem depósito. Lojas em uso interno (02, 03, 49, 52) ficam bloqueadas.'));
 
   // Cabeçalho
   const header = el('div', {
-    style: { display: 'grid', gridTemplateColumns: '60px 1fr 1fr 90px 1fr', gap: '8px', padding: '8px 10px', background: '#f1f5f9', borderRadius: '6px', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', color: '#475569', marginBottom: '6px' }
+    style: { display: 'grid', gridTemplateColumns: '55px 1fr 1fr 1fr 80px 110px', gap: '8px', padding: '8px 10px', background: '#f1f5f9', borderRadius: '6px', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', color: '#475569', marginBottom: '6px' }
   });
-  header.innerHTML = '<div>Loja</div><div>Área privativa (m²)</div><div>Área total (m²)</div><div style="text-align:center">Exaustão</div><div>Status</div>';
+  header.innerHTML = '<div>Loja</div><div>Área privativa (m²)</div><div>Área total (m²)</div><div>Depósito (m²)</div><div style="text-align:center">Exaust.</div><div>Status</div>';
   body.appendChild(header);
 
   // Lista scrollável
@@ -27,7 +27,7 @@ export async function abrirFormAreasLojas() {
   const inputs = {};
   lojas.forEach(l => {
     const linha = el('div', {
-      style: { display: 'grid', gridTemplateColumns: '60px 1fr 1fr 90px 1fr', gap: '8px', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }
+      style: { display: 'grid', gridTemplateColumns: '55px 1fr 1fr 1fr 80px 110px', gap: '8px', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }
     });
     const codigoLabel = el('div', { style: { fontWeight: '600', fontSize: '14px' } }, l.codigo);
 
@@ -45,16 +45,23 @@ export async function abrirFormAreasLojas() {
       value: l.area_total ?? '',
       style: { width: '100%', padding: '5px 8px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '4px' }
     });
+    const inpDeposito = el('input', {
+      type: 'number',
+      step: '0.01',
+      placeholder: '(vazio)',
+      value: l.area_deposito ?? '',
+      style: { width: '100%', padding: '5px 8px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '4px' }
+    });
     const inpExaust = el('input', {
       type: 'checkbox',
       style: { width: '18px', height: '18px', cursor: 'pointer' }
     });
     inpExaust.checked = !!l.tem_exaustao;
     if (l.uso_interno) {
-      inpPriv.disabled = true; inpTotal.disabled = true; inpExaust.disabled = true;
-      inpPriv.style.opacity = '0.4'; inpTotal.style.opacity = '0.4'; inpExaust.style.opacity = '0.4';
+      inpPriv.disabled = true; inpTotal.disabled = true; inpDeposito.disabled = true; inpExaust.disabled = true;
+      inpPriv.style.opacity = '0.4'; inpTotal.style.opacity = '0.4'; inpDeposito.style.opacity = '0.4'; inpExaust.style.opacity = '0.4';
     }
-    inputs[l.codigo] = { priv: inpPriv, total: inpTotal, exaust: inpExaust };
+    inputs[l.codigo] = { priv: inpPriv, total: inpTotal, deposito: inpDeposito, exaust: inpExaust };
 
     let statusBadge = '';
     if (l.uso_interno) statusBadge = '<span style="color:#475569;font-size:11px">Bloqueada</span>';
@@ -66,6 +73,7 @@ export async function abrirFormAreasLojas() {
     linha.appendChild(codigoLabel);
     linha.appendChild(inpPriv);
     linha.appendChild(inpTotal);
+    linha.appendChild(inpDeposito);
     const exaustWrap = el('div', { style: { textAlign: 'center' } });
     exaustWrap.appendChild(inpExaust);
     linha.appendChild(exaustWrap);
@@ -91,17 +99,19 @@ export async function abrirFormAreasLojas() {
     onSubmit: async () => {
       const supa = await getSupabase();
       const updates = [];
-      Object.entries(inputs).forEach(([codigo, { priv, total, exaust }]) => {
+      Object.entries(inputs).forEach(([codigo, { priv, total, deposito, exaust }]) => {
         if (priv.disabled) return; // pula uso interno
         const newPriv = priv.value ? Number(priv.value) : null;
         const newTotal = total.value ? Number(total.value) : null;
+        const newDeposito = deposito.value ? Number(deposito.value) : null;
         const newExaust = !!exaust.checked;
         const original = lojas.find(l => l.codigo === codigo);
         const mudou = (newPriv ?? null) !== (original?.area_privativa ?? null) ||
                       (newTotal ?? null) !== (original?.area_total ?? null) ||
+                      (newDeposito ?? null) !== (original?.area_deposito ?? null) ||
                       newExaust !== !!(original?.tem_exaustao);
         if (mudou) {
-          updates.push({ codigo, area_privativa: newPriv, area_total: newTotal, tem_exaustao: newExaust });
+          updates.push({ codigo, area_privativa: newPriv, area_total: newTotal, area_deposito: newDeposito, tem_exaustao: newExaust });
         }
       });
       if (updates.length === 0) {
@@ -111,7 +121,7 @@ export async function abrirFormAreasLojas() {
       let salvas = 0;
       for (const u of updates) {
         const { error } = await supa.from('lojas')
-          .update({ area_privativa: u.area_privativa, area_total: u.area_total, tem_exaustao: u.tem_exaustao })
+          .update({ area_privativa: u.area_privativa, area_total: u.area_total, area_deposito: u.area_deposito, tem_exaustao: u.tem_exaustao })
           .eq('codigo', u.codigo);
         if (error) {
           throw new Error(`Erro na loja ${u.codigo}: ${error.message}`);

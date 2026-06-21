@@ -293,16 +293,19 @@ function renderResumo(c, dados) {
   `;
   div.appendChild(bloco1);
 
-  // Bloco extra: características das lojas (exaustão)
+  // Bloco extra: características das lojas (exaustão + depósito)
   const lojasCodigos = c.lojas || [];
   const lojasInfo = (dados.lojasStatus || []).filter(l => lojasCodigos.includes(l.codigo));
   if (lojasInfo.length > 0) {
     const blocoLojas = el('div', { className: 'resumo-bloco' });
     const itens = lojasInfo.map(l => {
-      const badge = l.tem_exaustao
+      const badgeEx = l.tem_exaustao
         ? '<span class="badge" style="background:#dcfce7;color:#15803d">Sim</span>'
         : '<span class="badge" style="background:#f1f5f9;color:#64748b">Não</span>';
-      return `<div><strong>Loja ${escapeHtml(l.codigo)}:</strong> Exaustão ${badge}</div>`;
+      const dep = (l.area_deposito != null && Number(l.area_deposito) > 0)
+        ? `<span style="color:#15803d;font-weight:600">${Number(l.area_deposito).toFixed(2).replace('.',',')} m²</span>`
+        : '<span style="color:#94a3b8">sem depósito</span>';
+      return `<div><strong>Loja ${escapeHtml(l.codigo)}:</strong> Exaustão ${badgeEx} · Depósito ${dep}</div>`;
     }).join('');
     blocoLojas.innerHTML = `
       <h3>🏪 Características das lojas</h3>
