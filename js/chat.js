@@ -4,7 +4,9 @@
 import { chatComClaude } from './claude.js';
 import {
   getInquilinos, getContratos, getLojasStatus, getPropostas, getKPIs, getLeads,
-  getCobrancas, getInadimplencia, getDespesas, getDREMensal, getDocumentosTodos} from './data-layer.js';
+  getCobrancas, getInadimplencia, getDespesas, getDREMensal, getDocumentosTodos,
+  getGestoesAtivas, getOcorrenciasPendentesGlobal
+} from './data-layer.js';
 import { fmtBR, formatMoney, LABELS_GARANTIA, LABELS_STATUS_PROPOSTA } from './utils.js';
 
 const LABELS_STATUS_LEAD = {
@@ -38,8 +40,8 @@ export async function initChat() {
         <button class="btn outline" id="chat-limpar">Limpar conversa</button>
       </div>
       <div class="sub" style="margin-bottom:14px;color:var(--ink-soft)">
-        O Claude tem acesso aos dados atuais do app: inquilinos, contratos, propostas (todas), lojas (com áreas) e leads (CRM com timeline completa).
-        Pergunte sobre vencimentos, R$/m², ocupação, garantias, comparações, projeções, pipeline.
+        O Claude tem acesso COMPLETO ao portfólio: lojas (área, depósito, exaustão), inquilinos, contratos (com cláusulas-chave extraídas por IA), propostas, leads (timeline), financeiro (cobranças, inadimplência, despesas, DRE), documentos (seguros, AVCB, certidões), gestões e ocorrências, e alertas consolidados.
+        Pergunte sobre vencimentos, R$/m², ocupação, garantias, cláusulas, gestões atrasadas, projeções, pipeline.
       </div>
 
       <div id="chat-mensagens" style="
@@ -71,16 +73,18 @@ export async function initChat() {
   const sugestoesEl = panel.querySelector('#chat-sugestoes');
 
   const sugestoes = [
-    'Quantos leads ativos temos?',
+    'Quais alertas críticos preciso resolver hoje?',
+    'Quais gestões de contrato estão atrasadas?',
+    'Quais lojas têm exaustão e depósito?',
+    'Compare cláusulas de renovação entre os contratos',
+    'Qual a inadimplência atual e o total atualizado?',
+    'Quais documentos vencem nos próximos 30 dias?',
+    'Quantos leads ativos temos e algum parado?',
     'Qual a taxa de conversão de leads em propostas?',
-    'Quais lojas têm mais interesse no momento?',
-    'Algum lead parado há mais de 30 dias?',
     'Quais propostas estão acima do R$/m² médio?',
-    'Por que propostas costumam ser recusadas?',
     'Qual contrato vence primeiro?',
     'Qual a receita potencial máxima ocupando 100%?',
-    'Compare R$/m² entre os contratos',
-    'Quais corretores trazem mais negócios?'
+    'Compare R$/m² entre os contratos'
   ];
   sugestoes.forEach(s => {
     const chip = document.createElement('button');
@@ -94,7 +98,7 @@ export async function initChat() {
 
   if (historico.length === 0) {
     adicionarMensagem(mensagensEl, 'assistant',
-      'Olá Fabricio! Sou o assistente de IA do Union 511. Tenho acesso a todos os dados do portfólio: lojas e áreas, contratos, propostas (todas, incluindo recusadas/expiradas/convertidas) e leads do CRM com timeline completa. Pergunte algo ou clique numa sugestão.');
+      'Olá Fabricio! Sou o assistente de IA do Union 511. Tenho visão completa do portfólio: lojas (área, depósito, exaustão), contratos com cláusulas-chave, propostas, leads, financeiro (cobranças/inadimplência/despesas/DRE), documentos, gestões pendentes e alertas consolidados. Pergunte algo ou clique numa sugestão.');
   } else {
     historico.forEach(m => adicionarMensagem(mensagensEl, m.role, m.content));
   }
@@ -169,7 +173,7 @@ async function atualizarContextoSeNecessario() {
 
 async function gerarContextoDb() {
   const mesAtual = new Date().toISOString().slice(0, 7);
-  const [kpis, inquilinos, contratos, propostas, lojas, leads, cobMes, inad, despMes, dre] = await Promise.all([
+  const [kpis, inquilinos, contratos, propostas, lojas, leads, cobMes, inad, despMes, dre, documentos, gestoes, ocorrenciasPendentes] = await Promise.all([
     getKPIs().catch(() => null),
     getInquilinos().catch(() => []),
     getContratos('ativo').catch(() => []),
@@ -179,7 +183,10 @@ async function gerarContextoDb() {
     getCobrancas({ mes: mesAtual }).catch(() => []),
     getInadimplencia().catch(() => []),
     getDespesas({ mes: mesAtual }).catch(() => []),
-    getDREMensal({}).catch(() => [])
+    getDREMensal({}).catch(() => []),
+    getDocumentosTodos().catch(() => []),
+    getGestoesAtivas().catch(() => []),
+    getOcorrenciasPendentesGlobal().catch(() => [])
   ]);
 
   const areaByCodigo = {};
@@ -213,22 +220,30 @@ async function gerarContextoDb() {
   }
 
   linhas.push('');
-  linhas.push('## Lojas (' + lojas.length + ' total) — código, área privativa, status, inquilino atual');
+  linhas.push('## Lojas (' + lojas.length + ' total) — código, área privativa, depósito, exaustão, status, inquilino atual');
   lojas.forEach(l => {
     const area = l.area_privativa ? Number(l.area_privativa).toFixed(2) + ' m²' : '—';
+    const dep = (l.area_deposito != null && Number(l.area_deposito) > 0)
+      ? ' | depósito ' + Number(l.area_deposito).toFixed(2) + ' m²'
+      : '';
+    const ex = l.tem_exaustao ? ' | EXAUSTÃO' : '';
     const inq = l.inquilino_atual ? ' · ' + l.inquilino_atual : '';
-    linhas.push('- Loja ' + l.codigo + ' | ' + area + ' | ' + l.status + inq);
+    linhas.push('- Loja ' + l.codigo + ' | ' + area + dep + ex + ' | ' + l.status + inq);
   });
+  const comExaustao = lojas.filter(l => l.tem_exaustao).map(l => l.codigo);
+  const comDeposito = lojas.filter(l => l.area_deposito != null && Number(l.area_deposito) > 0);
+  if (comExaustao.length > 0) linhas.push('Resumo exaustão: lojas ' + comExaustao.join(', '));
+  if (comDeposito.length > 0) linhas.push('Resumo depósitos: ' + comDeposito.map(l => 'L' + l.codigo + '=' + Number(l.area_deposito).toFixed(2) + 'm²').join(', '));
 
   linhas.push('');
   linhas.push('## Inquilinos ativos (' + inquilinos.length + ')');
-  inquilinos.slice(0, 30).forEach(i => {
+  inquilinos.forEach(i => {
     linhas.push('- ' + (i.nome_fantasia || i.razao_social) + ' (' + i.razao_social + ') — ' + (i.documento || 's/doc') + ' — ' + (i.segmento || 'sem segmento'));
   });
 
   linhas.push('');
-  linhas.push('## Contratos ativos (' + contratos.length + ') — com m² e R$/m² calculado');
-  contratos.slice(0, 30).forEach(c => {
+  linhas.push('## Contratos ativos (' + contratos.length + ') — com m² e R$/m² calculado + cláusulas-chave extraídas pela IA');
+  contratos.forEach(c => {
     const lojasArr = Array.isArray(c.lojas) ? c.lojas : [];
     const lojasStr = lojasArr.join(',');
     const areas = lojasArr.map(cod => Number(areaByCodigo[cod] || 0));
@@ -238,7 +253,7 @@ async function gerarContextoDb() {
       ? lojasArr.map(cod => 'L' + cod + '=' + (areaByCodigo[cod] || '?') + 'm²').join(' + ') + ' = ' + areaTotal.toFixed(2) + ' m²'
       : areaTotal.toFixed(2) + ' m²';
     linhas.push(
-      '- ' + (c.inquilino_nome || c.inquilino_razao_social || '?') +
+      '- ' + (c.inquilino_nome || c.inquilino_razao_social || c.nome_fantasia || c.razao_social || '?') +
       ' | lojas ' + lojasStr +
       ' | ' + detalheArea +
       ' | ' + formatMoney(c.valor_aluguel) + '/mês' +
@@ -249,6 +264,23 @@ async function gerarContextoDb() {
       ' | reajuste ' + (c.indice_reajuste || '?') +
       ' | garantia ' + (LABELS_GARANTIA[c.tipo_garantia] || c.tipo_garantia || '?')
     );
+    // Cláusulas-chave (JSONB extraído pela IA via Edge Function)
+    const cl = c.clausulas_principais;
+    if (cl && typeof cl === 'object' && Object.keys(cl).length > 0) {
+      linhas.push('  CLÁUSULAS-CHAVE:');
+      const renderCat = (label, obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        const pares = Object.entries(obj).filter(([_, v]) => v != null && v !== '' && v !== false);
+        if (pares.length === 0) return;
+        linhas.push('    • ' + label + ': ' + pares.map(([k, v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v)).join('; '));
+      };
+      renderCat('Financeiras', cl.financeiras);
+      renderCat('Garantia', cl.garantia);
+      renderCat('Uso/Cessão', cl.uso_cessao);
+      renderCat('Devolução', cl.devolucao);
+      renderCat('Encargos', cl.encargos);
+      renderCat('Renovação', cl.renovacao);
+    }
   });
 
   // PROPOSTAS — todas (ativas + recusadas + expiradas + convertidas)
@@ -262,7 +294,7 @@ async function gerarContextoDb() {
   linhas.push('Resumo: ' + propAtivas.length + ' ativas, ' + propRecusadas.length + ' recusadas, ' + propExpiradas.length + ' expiradas, ' + propConvertidas.length + ' convertidas em contrato');
   linhas.push('Benchmarks de mercado: conservador R$ 152/m², medio R$ 176/m², ancora R$ 193/m²');
 
-  propostas.slice(0, 40).forEach(p => {
+  propostas.forEach(p => {
     const lojasArr = Array.isArray(p.lojas) ? p.lojas : [];
     const lojasStr = lojasArr.join(',');
     const areaPropostaLojas = lojasArr.reduce((s, cod) => s + Number(areaByCodigo[cod] || 0), 0);
@@ -349,7 +381,7 @@ async function gerarContextoDb() {
   if (leads.length > 0) {
     linhas.push('');
     linhas.push('Detalhe de cada lead com timeline completa:');
-    leads.slice(0, 30).forEach(l => {
+    leads.forEach(l => {
       const lojasStr = (l.lojas || []).join(',') || '—';
       const ultData = l.ultima_interacao_data || l.updated_at || l.created_at;
       const diasDesde = ultData ? Math.floor((hoje - new Date(ultData)) / 86400000) : null;
@@ -397,7 +429,7 @@ async function gerarContextoDb() {
     const dev = cobMes.reduce((s,c) => s + Number(c.valor_devido || 0), 0);
     const pago = cobMes.filter(c => c.status === 'paga').reduce((s,c) => s + Number(c.valor_pago || c.valor_devido || 0), 0);
     linhas.push('Cobrancas do mes: ' + cobMes.length + ' | Cheio ' + formatMoney(cheio) + ' | Descontos ' + formatMoney(desc) + ' | A receber ' + formatMoney(dev) + ' | Recebido ' + formatMoney(pago));
-    cobMes.slice(0, 30).forEach(c => {
+    cobMes.forEach(c => {
       linhas.push('- ' + (c.nome_fantasia || c.razao_social) + ' | venc ' + fmtBR(c.vencimento) + ' | ' + formatMoney(c.valor_devido) + ' | ' + c.status);
     });
   }
@@ -428,25 +460,24 @@ async function gerarContextoDb() {
   }
 
   // DOCUMENTOS (seguros, certidões, AVCB, alvarás)
-  if (typeof documentos !== 'undefined' && documentos && documentos.length > 0) {
+  const TIPOS_LBL = {
+    seguro_fianca: 'Seguro fianca',
+    seguro_incendio: 'Seguro incendio',
+    certidao_negativa_federal: 'Certidao federal',
+    certidao_negativa_municipal: 'Certidao municipal',
+    certidao_negativa_estadual: 'Certidao estadual',
+    certidao_trabalhista: 'Certidao trabalhista',
+    vistoria_inicial: 'Vistoria inicial',
+    vistoria_final: 'Vistoria final',
+    laudo_avcb: 'AVCB',
+    alvara_funcionamento: 'Alvara funcionamento',
+    outros: 'Outros'
+  };
+  const hojeDoc = new Date(); hojeDoc.setHours(0,0,0,0);
+  if (documentos && documentos.length > 0) {
     linhas.push('');
     linhas.push('## Documentos cadastrados (' + documentos.length + ' total)');
-    const hojeDoc = new Date();
-    hojeDoc.setHours(0,0,0,0);
-    const TIPOS_LBL = {
-      seguro_fianca: 'Seguro fianca',
-      seguro_incendio: 'Seguro incendio',
-      certidao_negativa_federal: 'Certidao federal',
-      certidao_negativa_municipal: 'Certidao municipal',
-      certidao_negativa_estadual: 'Certidao estadual',
-      certidao_trabalhista: 'Certidao trabalhista',
-      vistoria_inicial: 'Vistoria inicial',
-      vistoria_final: 'Vistoria final',
-      laudo_avcb: 'AVCB',
-      alvara_funcionamento: 'Alvara funcionamento',
-      outros: 'Outros'
-    };
-    documentos.slice(0, 80).forEach(d => {
+    documentos.forEach(d => {
       const tipoLbl = TIPOS_LBL[d.tipo] || d.tipo;
       const inq = d.inquilino_nome_fantasia || d.inquilino_razao_social || 'inquilino ?';
       const val = d.data_validade ? new Date(d.data_validade) : null;
@@ -466,6 +497,64 @@ async function gerarContextoDb() {
     linhas.push('');
     linhas.push('## Documentos cadastrados');
     linhas.push('- Nenhum documento cadastrado ainda. Para cadastrar, edite um contrato e use a secao "Documentos do contrato".');
+  }
+
+  // GESTÕES (regras recorrentes do contrato) + OCORRÊNCIAS PENDENTES
+  if (gestoes && gestoes.length > 0) {
+    linhas.push('');
+    linhas.push('## Gestões ativas dos contratos (' + gestoes.length + ' regras)');
+    gestoes.forEach(g => {
+      const periodicidade = g.periodicidade_meses ? ' (a cada ' + g.periodicidade_meses + 'm)' : ' (evento único)';
+      const inq = g.inquilino_nome_fantasia || g.inquilino_razao_social || g.razao_social || 'inquilino ?';
+      linhas.push('- [' + inq + '] ' + (g.titulo || g.descricao || g.categoria || 'gestão') + periodicidade);
+    });
+  }
+  if (ocorrenciasPendentes && ocorrenciasPendentes.length > 0) {
+    linhas.push('');
+    linhas.push('## Ocorrências PENDENTES de gestões (' + ocorrenciasPendentes.length + ' total) — itens que precisam ser cumpridos');
+    const hojeOc = new Date(); hojeOc.setHours(0,0,0,0);
+    let atrasadas = 0;
+    ocorrenciasPendentes.forEach(o => {
+      const prev = o.data_prevista ? new Date(o.data_prevista) : null;
+      let status = '';
+      if (prev) {
+        const dias = Math.floor((prev - hojeOc) / 86400000);
+        if (dias < 0) { status = ' [ATRASADO ha ' + Math.abs(dias) + 'd]'; atrasadas++; }
+        else if (dias <= 7) status = ' [vence em ' + dias + 'd - urgente]';
+        else status = ' [em ' + dias + 'd]';
+      }
+      const inq = o.inquilino_nome_fantasia || o.inquilino_razao_social || o.razao_social || 'inquilino ?';
+      const dataStr = o.data_prevista ? new Date(o.data_prevista).toLocaleDateString('pt-BR') : '?';
+      linhas.push('- [' + inq + '] ' + (o.titulo || o.descricao || 'item') + ' | previsto ' + dataStr + status);
+    });
+    if (atrasadas > 0) linhas.push('TOTAL ATRASADAS: ' + atrasadas);
+  }
+
+  // ALERTAS/PENDÊNCIAS consolidados (resumo executivo)
+  linhas.push('');
+  linhas.push('## Alertas/Pendências consolidados (visão executiva)');
+  const alertas = [];
+  if (inad && inad.length > 0) {
+    const tot = inad.reduce((s,c)=>s+Number(c.total_atualizado||0),0);
+    alertas.push('• ' + inad.length + ' cobrança(s) inadimplente(s) — total atualizado ' + formatMoney(tot));
+  }
+  const docsVencidos = (documentos || []).filter(d => d.data_validade && new Date(d.data_validade) < hojeDoc);
+  const docsVencendo = (documentos || []).filter(d => {
+    if (!d.data_validade) return false;
+    const dias = Math.floor((new Date(d.data_validade) - hojeDoc) / 86400000);
+    return dias >= 0 && dias <= 30;
+  });
+  if (docsVencidos.length > 0) alertas.push('• ' + docsVencidos.length + ' documento(s) VENCIDO(s)');
+  if (docsVencendo.length > 0) alertas.push('• ' + docsVencendo.length + ' documento(s) vencendo em até 30 dias');
+  const ocAtrasadas = (ocorrenciasPendentes || []).filter(o => o.data_prevista && new Date(o.data_prevista) < hojeDoc);
+  if (ocAtrasadas.length > 0) alertas.push('• ' + ocAtrasadas.length + ' ocorrência(s) de gestão ATRASADA(s)');
+  if (leadsParados && leadsParados.length > 0) alertas.push('• ' + leadsParados.length + ' lead(s) parado(s) há mais de 30 dias');
+  const propAceitas = propostas.filter(p => p.status === 'aceita_aguardando_docs');
+  if (propAceitas.length > 0) alertas.push('• ' + propAceitas.length + ' proposta(s) aceita(s) aguardando documentação');
+  if (alertas.length === 0) {
+    linhas.push('Nenhum alerta crítico no momento.');
+  } else {
+    alertas.forEach(a => linhas.push(a));
   }
 
   return linhas.join('\n');
