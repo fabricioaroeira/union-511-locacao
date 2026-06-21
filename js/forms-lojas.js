@@ -92,7 +92,7 @@ export async function abrirFormAreasLojas() {
   }, `${comArea} de ${total} lojas com área cadastrada`));
 
   abrirModal({
-    titulo: 'Editar áreas das lojas',
+    titulo: 'Editar características das lojas',
     body,
     submitLabel: 'Salvar áreas',
     maxWidth: '720px',
