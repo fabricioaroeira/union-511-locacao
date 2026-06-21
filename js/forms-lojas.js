@@ -94,7 +94,7 @@ export async function abrirFormAreasLojas() {
   abrirModal({
     titulo: 'Editar características das lojas',
     body,
-    submitLabel: 'Salvar áreas',
+    submitLabel: 'Salvar',
     maxWidth: '720px',
     onSubmit: async () => {
       const supa = await getSupabase();
