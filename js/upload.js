@@ -53,6 +53,22 @@ function sanitizarNomeArquivo(nome) {
     .replace(/^_+|_+$/g, '');
 }
 
+// Upload "leve" — só sobe o PDF pro Storage e retorna o storage_path.
+// NÃO insere em `arquivos` (a tabela legada). Usado pelos anexos unificados
+// (tabela `documentos_contrato`), onde o storage_path é gravado diretamente
+// no campo arquivo_url. Evita o problema do CHECK constraint da arquivos.categoria.
+export async function uploadPdfStorage(file, { entidade_tipo, entidade_id }) {
+  if (MOCK_MODE) {
+    return { storage_path: URL.createObjectURL(file) };
+  }
+  const supa = await getSupabase();
+  const nomeSanitizado = sanitizarNomeArquivo(file.name);
+  const path = `${entidade_tipo}/${entidade_id}/${Date.now()}_${nomeSanitizado}`;
+  const { error: upErr } = await supa.storage.from('arquivos').upload(path, file);
+  if (upErr) throw upErr;
+  return { storage_path: path };
+}
+
 // Gera URL temporária (válida por 5 min) para visualizar/baixar um arquivo do Storage
 export async function getArquivoUrl(storage_path) {
   if (!storage_path) return null;

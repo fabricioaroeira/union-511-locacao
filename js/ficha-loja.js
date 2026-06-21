@@ -13,7 +13,7 @@ import {
 } from './data-layer.js';
 import { abrirFormContrato } from './forms-contrato.js';
 import { campo, lojasPicker, abrirModal, confirmarAcao } from './modal.js';
-import { getArquivoUrl, uploadArquivo } from './upload.js';
+import { getArquivoUrl, uploadPdfStorage } from './upload.js';
 import { extrairDocumentoDoPDF } from './claude.js';
 import { mostrarToast, renderTudo } from './render.js';
 
@@ -755,6 +755,12 @@ function montarFormAnexoNovo(contratoId, onFim) {
     try {
       if (!box._fileParaUpload) throw new Error('Escolha um PDF antes de salvar.');
       const get = (name) => box.querySelector(`[data-campo="${name}"]`)?.value || '';
+      // 1) Faz upload do PDF pro storage PRIMEIRO (evita registro órfão se upload falhar)
+      const { storage_path } = await uploadPdfStorage(box._fileParaUpload, {
+        entidade_tipo: 'contrato',
+        entidade_id: contratoId
+      });
+      // 2) Grava o registro JÁ com arquivo_url linkado
       const payload = {
         contrato_id: contratoId,
         tipo: get('tipo') || 'outros',
@@ -764,19 +770,10 @@ function montarFormAnexoNovo(contratoId, onFim) {
         data_validade: get('data_validade') || null,
         observacoes: get('observacoes') || null,
         nome_original: box._fileParaUpload.name,
-        tamanho_bytes: box._fileParaUpload.size
+        tamanho_bytes: box._fileParaUpload.size,
+        arquivo_url: storage_path
       };
-      // 1) Salva o registro
-      const docSalvo = await saveDocumento(payload);
-      // 2) Faz upload do PDF e linka
-      const arquivo = await uploadArquivo(box._fileParaUpload, {
-        entidade_tipo: 'contrato',
-        entidade_id: contratoId,
-        categoria: payload.tipo
-      });
-      if (arquivo?.storage_path) {
-        await saveDocumento({ id: docSalvo.id, arquivo_url: arquivo.storage_path });
-      }
+      await saveDocumento(payload);
       mostrarToast('Anexo salvo', 'success');
       onFim();
     } catch (err) {

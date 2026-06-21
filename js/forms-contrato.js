@@ -313,19 +313,19 @@ export async function abrirFormContrato(id = null, opts = {}) {
 
       if (pdfFile && contrato?.id) {
         try {
-          const { uploadArquivo } = await import('./upload.js');
+          const { uploadPdfStorage } = await import('./upload.js');
           const { saveDocumento } = await import('./data-layer.js');
-          const arq = await uploadArquivo(pdfFile, {
+          // 1) Sobe o PDF pro Storage
+          const { storage_path } = await uploadPdfStorage(pdfFile, {
             entidade_tipo: 'contrato',
-            entidade_id: contrato.id,
-            categoria: 'contrato'
+            entidade_id: contrato.id
           });
-          // Cria também o registro em `documentos` (tabela unificada dos anexos)
+          // 2) Cria o registro em documentos_contrato (tabela unificada de anexos)
           await saveDocumento({
             contrato_id: contrato.id,
             tipo: 'contrato',
             descricao: 'PDF do contrato assinado',
-            arquivo_url: arq?.storage_path || null,
+            arquivo_url: storage_path,
             nome_original: pdfFile.name,
             tamanho_bytes: pdfFile.size
           });
