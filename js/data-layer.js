@@ -849,6 +849,10 @@ export async function deleteArquivo(arquivoId, storage_path) {
 // DOCUMENTOS DE CONTRATO (seguros, certidões, vistorias, AVCB...)
 // =====================================================================
 export const TIPOS_DOCUMENTO = {
+  // Documentos do próprio contrato (sem prazo de validade)
+  contrato:                    'Contrato (PDF original)',
+  aditivo:                     'Aditivo contratual',
+  // Documentos com prazo de validade (geram alertas)
   seguro_fianca:               'Seguro fiança',
   seguro_incendio:             'Seguro incêndio',
   certidao_negativa_federal:   'Certidão negativa federal',
@@ -951,38 +955,26 @@ export async function getOcorrenciasPendentesGlobal() {
 // =====================================================================
 export async function getAnexosContrato(contratoId) {
   if (MOCK_MODE) return [];
-  const [arquivos, documentos] = await Promise.all([
-    getArquivos('contrato', contratoId).catch(() => []),
-    getDocumentosByContrato(contratoId).catch(() => [])
-  ]);
-  const fromArquivos = (arquivos || []).map(a => ({
-    id: a.id,
-    fonte: 'arquivo',
-    categoria: a.categoria || 'outro',
-    nome_original: a.nome_original,
-    tamanho_bytes: a.tamanho_bytes,
-    storage_path: a.storage_path,
-    numero: null,
-    data_emissao: null,
-    data_validade: null,
-    observacoes: null,
-    created_at: a.created_at
-  }));
-  const fromDocs = (documentos || []).map(d => ({
+  // Tabela 'documentos' é a fonte única dos anexos do contrato (post-unificação SQL_ANEXOS_UNIFICADOS).
+  // Inclui PDF do contrato, aditivos, seguros, certidões, AVCB — com ou sem data_validade.
+  const documentos = await getDocumentosByContrato(contratoId).catch(() => []);
+  const anexos = (documentos || []).map(d => ({
     id: d.id,
     fonte: 'documento',
-    categoria: d.tipo || 'outro',           // tipo do documento vira categoria
-    nome_original: d.descricao || d.numero || (TIPOS_DOCUMENTO[d.tipo] || d.tipo),
-    tamanho_bytes: null,
-    storage_path: d.arquivo_url || null,
+    categoria: d.tipo || 'outros',
+    tipo: d.tipo,
     numero: d.numero,
+    descricao: d.descricao,
+    nome_original: d.nome_original || d.descricao || d.numero || (TIPOS_DOCUMENTO[d.tipo] || d.tipo),
+    tamanho_bytes: d.tamanho_bytes || null,
+    storage_path: d.arquivo_url || null,
     data_emissao: d.data_emissao,
-    data_validade: d.data_validade,         // ⚠️ ESSE é o campo que gera alerta
+    data_validade: d.data_validade,         // alimenta os alertas automáticos
     observacoes: d.observacoes,
     created_at: d.created_at
   }));
-  // Ordena: docs com validade próxima primeiro, depois arquivos por data
-  return [...fromDocs, ...fromArquivos].sort((a,b) => {
+  // Ordena: com validade próxima primeiro, depois por data de criação desc
+  return anexos.sort((a, b) => {
     if (a.data_validade && b.data_validade) return new Date(a.data_validade) - new Date(b.data_validade);
     if (a.data_validade) return -1;
     if (b.data_validade) return 1;

@@ -5,14 +5,16 @@
 import { el, fmtBR, parseBR, addMonths, mesesEntre, formatMoney, LABELS_GARANTIA } from './utils.js';
 import {
   getContrato, getArquivos, getDocumentosByContrato, TIPOS_DOCUMENTO,
+  saveDocumento, deleteDocumento,
   getGestoesPorContrato, atualizarGestaoAtivo, getHistoricoContrato,
   getInquilinos, getLojasStatus, saveContrato,
   getAnexosContrato,
   getOcorrenciasPorGestao, marcarOcorrenciaCumprida, reabrirOcorrencia
 } from './data-layer.js';
 import { abrirFormContrato } from './forms-contrato.js';
-import { campo, lojasPicker, abrirModal } from './modal.js';
-import { getArquivoUrl } from './upload.js';
+import { campo, lojasPicker, abrirModal, confirmarAcao } from './modal.js';
+import { getArquivoUrl, uploadArquivo } from './upload.js';
+import { extrairDocumentoDoPDF } from './claude.js';
 import { mostrarToast, renderTudo } from './render.js';
 
 function toIsoDate(brStr) {
@@ -520,32 +522,43 @@ function montarFormDados(c, inquilinos, lojasStatus) {
 // =====================================================================
 
 // Mapa de categorias unificadas (cobre tanto arquivos quanto documentos)
+// Labels alinhados com TIPOS_DOCUMENTO da data-layer (tabela documentos unificada)
 const LABEL_CATEGORIA = {
-  // Categorias da tabela arquivos
-  contrato_assinado: 'Contrato assinado',
+  contrato: 'Contrato (PDF original)',
   aditivo: 'Aditivo contratual',
-  termo: 'Termo',
-  laudo: 'Laudo',
+  seguro_fianca: 'Seguro fiança',
+  seguro_incendio: 'Seguro incêndio',
+  certidao_negativa_federal: 'Certidão negativa federal',
+  certidao_negativa_municipal: 'Certidão negativa municipal',
+  certidao_negativa_estadual: 'Certidão negativa estadual',
+  certidao_trabalhista: 'Certidão trabalhista',
+  vistoria_inicial: 'Vistoria inicial',
+  vistoria_final: 'Vistoria final',
+  laudo_avcb: 'Laudo AVCB',
+  alvara_funcionamento: 'Alvará de funcionamento',
+  outros: 'Outros',
+  // Legados (mantém pra retro-compat com itens já cadastrados)
+  contrato_assinado: 'Contrato (PDF original)',
+  termo: 'Termo', laudo: 'Laudo',
   fianca: 'Documento de garantia',
   documentos_pessoais: 'Documentos pessoais',
-  comprovante: 'Comprovante',
-  planta: 'Planta',
-  outro: 'Outro',
-  // Tipos da tabela documentos_contrato (mantém os já cadastrados)
-  seguro_fianca: 'Seguro fiança',
-  apolice_seguro: 'Apólice de seguro',
-  avcb: 'AVCB',
-  alvara: 'Alvará',
-  certidao: 'Certidão',
-  habite_se: 'Habite-se'
+  comprovante: 'Comprovante', planta: 'Planta', outro: 'Outros',
+  apolice_seguro: 'Apólice de seguro', avcb: 'Laudo AVCB',
+  alvara: 'Alvará de funcionamento', certidao: 'Certidão', habite_se: 'Habite-se'
 };
 
 const ICONE_CATEGORIA = {
-  contrato_assinado: '📜', aditivo: '📝', termo: '📋', laudo: '🧾',
+  contrato: '📜', aditivo: '📝',
+  seguro_fianca: '🛡️', seguro_incendio: '🔥',
+  certidao_negativa_federal: '📃', certidao_negativa_municipal: '📃',
+  certidao_negativa_estadual: '📃', certidao_trabalhista: '📃',
+  vistoria_inicial: '🔍', vistoria_final: '🔍',
+  laudo_avcb: '🚒', alvara_funcionamento: '🏛️', outros: '📄',
+  // Legados
+  contrato_assinado: '📜', termo: '📋', laudo: '🧾',
   fianca: '🛡️', documentos_pessoais: '🪪', comprovante: '💵',
   planta: '🗺️', outro: '📄',
-  seguro_fianca: '🛡️', apolice_seguro: '🔥', avcb: '🚒',
-  alvara: '🏛️', certidao: '📃', habite_se: '🏠'
+  apolice_seguro: '🔥', avcb: '🚒', alvara: '🏛️', certidao: '📃', habite_se: '🏠'
 };
 
 function renderListaAnexos(anexos, contratoId) {
@@ -554,37 +567,47 @@ function renderListaAnexos(anexos, contratoId) {
   div.innerHTML =
     '<h3>📄 Anexos do contrato</h3>' +
     '<p style="color:var(--ink-soft);font-size:12px;margin-bottom:10px">' +
-      'Contratos, aditivos, apólices, certidões e outros documentos. ' +
+      'Contratos, aditivos, apólices, certidões e outros documentos. Anexe um PDF — a IA detecta o tipo e a data de validade automaticamente. ' +
       'Itens com <strong>data de validade</strong> geram alertas automáticos.' +
       (totalComValidade > 0 ? ' <em>· ' + totalComValidade + ' com validade cadastrada</em>' : '') +
     '</p>';
 
-  if (!anexos || anexos.length === 0) {
-    div.innerHTML += '<div class="ficha-vazio">Nenhum anexo cadastrado. Use o formulário do contrato para anexar PDFs (contrato, aditivos) ou cadastrar documentos com validade (apólice, AVCB, certidões).</div>';
-  } else {
-    const lista = el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:10px' });
-    anexos.forEach(a => {
+  const lista = el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:10px' });
+  const renderLista = (anexosAtuais) => {
+    lista.innerHTML = '';
+    if (!anexosAtuais || anexosAtuais.length === 0) {
+      lista.innerHTML = '<div class="ficha-vazio">Nenhum anexo ainda. Clique em "+ Anexar PDF" abaixo.</div>';
+      return;
+    }
+    anexosAtuais.forEach(a => {
       const dias = a.data_validade ? diasAte(a.data_validade) : null;
       const cor = corUrgencia(dias);
       const icone = ICONE_CATEGORIA[a.categoria] || '📄';
       const labelCat = LABEL_CATEGORIA[a.categoria] || a.categoria;
       const item = el('div', { className: 'ficha-item' });
-      const sub = a.fonte === 'documento'
-        ? (a.numero ? 'Nº ' + a.numero : '') + (a.observacoes ? ' · ' + a.observacoes : '')
-        : (a.nome_original || '') + (a.tamanho_bytes ? ' · ' + (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '');
+      const subBits = [];
+      if (a.numero) subBits.push('Nº ' + a.numero);
+      if (a.descricao && a.descricao !== a.nome_original) subBits.push(a.descricao);
+      if (a.nome_original) subBits.push(a.nome_original);
+      if (a.tamanho_bytes) subBits.push((a.tamanho_bytes / 1024).toFixed(1) + ' KB');
+      const sub = subBits.join(' · ');
       item.innerHTML = `
         <div style="font-size:22px;width:32px;text-align:center">${icone}</div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;color:var(--ink);font-size:13px">${escapeHtml(labelCat)}</div>
           <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sub) || '<em style="opacity:.6">—</em>'}</div>
         </div>
-        <div style="text-align:right;min-width:130px">
+        <div style="text-align:right;min-width:160px">
           ${a.data_validade
             ? '<div style="font-size:11px;color:var(--ink)">Vence ' + new Date(a.data_validade).toLocaleDateString('pt-BR') + '</div>' +
               '<div style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:' + cor.bg + ';color:' + cor.txt + ';margin-top:3px">' +
               (dias == null ? '—' : (dias < 0 ? 'Vencido ' + Math.abs(dias) + 'd' : 'Em ' + dias + 'd')) + '</div>'
             : '<div style="font-size:10px;color:#94a3b8;font-style:italic">sem validade</div>'}
-          ${a.storage_path ? '<button type="button" class="btn outline sm" data-ver style="font-size:11px;margin-top:6px;padding:3px 10px">👁 Ver PDF</button>' : ''}
+          <div style="display:flex;gap:4px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap">
+            ${a.storage_path ? '<button type="button" class="btn outline sm" data-ver style="font-size:10px;padding:3px 8px">👁 Ver</button>' : ''}
+            <button type="button" class="btn outline sm" data-edit style="font-size:10px;padding:3px 8px">✏️ Editar</button>
+            <button type="button" class="btn outline sm" data-del style="font-size:10px;padding:3px 8px;color:#dc2626">🗑️</button>
+          </div>
         </div>
       `;
       const btnVer = item.querySelector('[data-ver]');
@@ -594,19 +617,213 @@ function renderListaAnexos(anexos, contratoId) {
             const url = await getArquivoUrl(a.storage_path);
             if (url) window.open(url, '_blank');
             else mostrarToast('Arquivo não encontrado', 'error');
-          } catch (err) {
-            mostrarToast('Erro: ' + err.message, 'error');
-          }
+          } catch (err) { mostrarToast('Erro: ' + err.message, 'error'); }
         };
       }
+      item.querySelector('[data-edit]').onclick = () => abrirFormAnexoInline(a, contratoId, recarregar);
+      item.querySelector('[data-del]').onclick = async () => {
+        const ok = await confirmarAcao({
+          titulo: 'Excluir anexo',
+          mensagem: 'Excluir "' + (labelCat) + '"? Esta ação não pode ser desfeita.',
+          confirmLabel: 'Excluir', perigo: true
+        });
+        if (!ok) return;
+        try {
+          await deleteDocumento(a.id);
+          mostrarToast('Anexo excluído', 'success');
+          await recarregar();
+        } catch (err) { mostrarToast('Erro ao excluir: ' + err.message, 'error'); }
+      };
       lista.appendChild(item);
     });
-    div.appendChild(lista);
-  }
-  const btn = el('button', { type: 'button', className: 'btn ghost sm', style: 'margin-top:14px' }, '+ Gerenciar anexos no formulário do contrato');
-  btn.onclick = () => abrirFormContrato(contratoId);
-  div.appendChild(btn);
+  };
+  renderLista(anexos);
+  div.appendChild(lista);
+
+  // Botão + form inline pra anexar novo
+  const btnAdd = el('button', { type: 'button', className: 'btn', style: 'margin-top:14px' }, '+ Anexar PDF');
+  const formContainer = el('div', { style: 'display:none;margin-top:12px' });
+  div.appendChild(btnAdd);
+  div.appendChild(formContainer);
+
+  const recarregar = async () => {
+    const novos = await getAnexosContrato(contratoId).catch(() => []);
+    renderLista(novos);
+  };
+
+  btnAdd.onclick = () => {
+    btnAdd.style.display = 'none';
+    formContainer.style.display = 'block';
+    formContainer.innerHTML = '';
+    formContainer.appendChild(montarFormAnexoNovo(contratoId, async () => {
+      formContainer.innerHTML = '';
+      formContainer.style.display = 'none';
+      btnAdd.style.display = 'inline-block';
+      await recarregar();
+    }));
+  };
+
   return div;
+}
+
+// Mini-form pra anexar PDF novo (com IA preenchendo os campos)
+function montarFormAnexoNovo(contratoId, onFim) {
+  const box = el('div', { style: 'background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:14px' });
+  box._fileParaUpload = null;
+  box.innerHTML = `
+    <div style="margin-bottom:12px">
+      <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px">Arquivo PDF *</label>
+      <input type="file" data-file accept="application/pdf" style="font-size:12px">
+      <div data-iastatus style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:11px"></div>
+    </div>
+  `;
+  const camposBox = el('div', { 'data-campos': '' });
+  box.appendChild(camposBox);
+
+  const renderCamposForm = (preenchimento = {}) => {
+    const tipoOptions = Object.entries(TIPOS_DOCUMENTO).map(([v, l]) => `<option value="${v}" ${preenchimento.tipo === v ? 'selected' : ''}>${l}</option>`).join('');
+    camposBox.innerHTML = `
+      <div class="form-grid">
+        <div class="form-field"><label>Tipo *</label>
+          <select data-campo="tipo" required>${tipoOptions}</select>
+        </div>
+        <div class="form-field"><label>Número / apólice</label>
+          <input type="text" data-campo="numero" value="${preenchimento.numero || ''}">
+        </div>
+        <div class="form-field full"><label>Descrição</label>
+          <input type="text" data-campo="descricao" value="${preenchimento.descricao || ''}">
+        </div>
+        <div class="form-field"><label>Data de emissão</label>
+          <input type="date" data-campo="data_emissao" value="${preenchimento.data_emissao || ''}">
+        </div>
+        <div class="form-field"><label>Data de validade <small style="color:#94a3b8">(opcional — preenche pra gerar alerta)</small></label>
+          <input type="date" data-campo="data_validade" value="${preenchimento.data_validade || ''}">
+        </div>
+        <div class="form-field full"><label>Observações</label>
+          <textarea data-campo="observacoes" rows="2">${preenchimento.observacoes || ''}</textarea>
+        </div>
+      </div>
+    `;
+  };
+  renderCamposForm();
+
+  const acoes = el('div', { style: 'display:flex;gap:8px;justify-content:flex-end;margin-top:12px' });
+  acoes.innerHTML = `
+    <button type="button" class="btn ghost sm" data-cancel>Cancelar</button>
+    <button type="button" class="btn sm" data-salvar>Salvar anexo</button>
+  `;
+  box.appendChild(acoes);
+
+  const inputFile = box.querySelector('[data-file]');
+  const iaStatus = box.querySelector('[data-iastatus]');
+  inputFile.addEventListener('change', async () => {
+    const f = inputFile.files?.[0];
+    if (!f) return;
+    box._fileParaUpload = f;
+    iaStatus.style.display = 'block';
+    iaStatus.style.background = '#eff6ff';
+    iaStatus.style.color = '#1e40af';
+    iaStatus.style.border = '1px solid #bfdbfe';
+    iaStatus.innerHTML = '🤖 Claude está lendo o PDF e detectando tipo/validade...';
+    try {
+      const ext = await extrairDocumentoDoPDF(f);
+      renderCamposForm({
+        tipo: ext.tipo && TIPOS_DOCUMENTO[ext.tipo] ? ext.tipo : 'outros',
+        numero: ext.numero,
+        descricao: ext.descricao,
+        data_emissao: ext.data_emissao,
+        data_validade: ext.data_validade
+      });
+      const c = ext.confianca ?? '?';
+      iaStatus.style.background = '#ecfdf5';
+      iaStatus.style.color = '#065f46';
+      iaStatus.style.border = '1px solid #6ee7b7';
+      iaStatus.innerHTML = '✓ IA preencheu os campos (confiança ' + c + '/100). Revise antes de salvar.';
+    } catch (err) {
+      iaStatus.style.background = '#fef2f2';
+      iaStatus.style.color = '#991b1b';
+      iaStatus.style.border = '1px solid #fecaca';
+      iaStatus.innerHTML = '⚠️ IA falhou: ' + err.message + '. Preencha manualmente.';
+    }
+  });
+
+  box.querySelector('[data-cancel]').onclick = () => onFim();
+  box.querySelector('[data-salvar]').onclick = async () => {
+    const btn = box.querySelector('[data-salvar]');
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    try {
+      if (!box._fileParaUpload) throw new Error('Escolha um PDF antes de salvar.');
+      const get = (name) => box.querySelector(`[data-campo="${name}"]`)?.value || '';
+      const payload = {
+        contrato_id: contratoId,
+        tipo: get('tipo') || 'outros',
+        numero: get('numero') || null,
+        descricao: get('descricao') || null,
+        data_emissao: get('data_emissao') || null,
+        data_validade: get('data_validade') || null,
+        observacoes: get('observacoes') || null,
+        nome_original: box._fileParaUpload.name,
+        tamanho_bytes: box._fileParaUpload.size
+      };
+      // 1) Salva o registro
+      const docSalvo = await saveDocumento(payload);
+      // 2) Faz upload do PDF e linka
+      const arquivo = await uploadArquivo(box._fileParaUpload, {
+        entidade_tipo: 'contrato',
+        entidade_id: contratoId,
+        categoria: payload.tipo
+      });
+      if (arquivo?.storage_path) {
+        await saveDocumento({ id: docSalvo.id, arquivo_url: arquivo.storage_path });
+      }
+      mostrarToast('Anexo salvo', 'success');
+      onFim();
+    } catch (err) {
+      mostrarToast('Erro: ' + err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Salvar anexo';
+    }
+  };
+
+  return box;
+}
+
+// Editar anexo existente — abre modal simples (sem mexer no PDF, só metadados)
+function abrirFormAnexoInline(anexo, contratoId, onSalvar) {
+  const body = el('div');
+  const tipoOptions = Object.entries(TIPOS_DOCUMENTO).map(([v, l]) => ({ value: v, label: l }));
+  const grid = el('div', { className: 'form-grid' });
+  grid.appendChild(campo({ name: 'tipo', label: 'Tipo *', type: 'select', options: tipoOptions, value: anexo.tipo || anexo.categoria || 'outros', required: true }));
+  grid.appendChild(campo({ name: 'numero', label: 'Número / apólice', type: 'text', value: anexo.numero || '' }));
+  grid.appendChild(campo({ name: 'descricao', label: 'Descrição', type: 'text', value: anexo.descricao || '', full: true }));
+  grid.appendChild(campo({ name: 'data_emissao', label: 'Data de emissão', type: 'date', value: anexo.data_emissao || '' }));
+  grid.appendChild(campo({ name: 'data_validade', label: 'Data de validade (opcional)', type: 'date', value: anexo.data_validade || '' }));
+  grid.appendChild(campo({ name: 'observacoes', label: 'Observações', type: 'textarea', value: anexo.observacoes || '', full: true, rows: 2 }));
+  body.appendChild(grid);
+
+  abrirModal({
+    titulo: 'Editar anexo',
+    body,
+    submitLabel: 'Salvar alterações',
+    onSubmit: async () => {
+      const form = body.closest('form');
+      const fd = new FormData(form);
+      const payload = {
+        id: anexo.id,
+        contrato_id: contratoId,
+        tipo: fd.get('tipo') || 'outros',
+        numero: fd.get('numero') || null,
+        descricao: fd.get('descricao') || null,
+        data_emissao: fd.get('data_emissao') || null,
+        data_validade: fd.get('data_validade') || null,
+        observacoes: fd.get('observacoes') || null
+      };
+      await saveDocumento(payload);
+      mostrarToast('Anexo atualizado', 'success');
+      await onSalvar();
+    }
+  });
 }
 
 // =====================================================================

@@ -186,164 +186,16 @@ export async function abrirFormContrato(id = null, opts = {}) {
   sec5.appendChild(grid5);
   body.appendChild(sec5);
 
-  // === ARQUIVOS DO CONTRATO (PDF assinado, aditivos) — modo edição ===
+  // === ANEXOS — agora todos ficam unificados na aba "📄 Anexos" da ficha ===
+  // Antes havia duas seções (Arquivos + Documentos) aqui no modal. Foram movidas
+  // pra ficha do contrato pra evitar duplicação. Aqui só mostramos um aviso.
   if (id) {
-    const secArq = el('div', { className: 'form-section' });
-    secArq.appendChild(el('div', { className: 'form-section-title' }, '📄 Arquivos do contrato'));
-    secArq.appendChild(el('div', {
-      style: { fontSize: '12px', color: 'var(--ink-soft)', marginBottom: '10px' }
-    }, 'PDF do contrato assinado, aditivos e outros arquivos relacionados ao contrato.'));
-    const arqList = el('div');
-    secArq.appendChild(arqList);
-
-    async function renderArquivos() {
-      try {
-        const arquivos = await getArquivos('contrato', id);
-        arqList.innerHTML = '';
-        if (!arquivos || arquivos.length === 0) {
-          arqList.innerHTML = '<div style="padding:14px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;text-align:center;color:var(--ink-soft);font-size:13px">Nenhum arquivo anexado a este contrato.</div>';
-          return;
-        }
-        arquivos.forEach(function(a) {
-          const row = el('div');
-          row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
-          const tamanho = a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '';
-          const LABELS_CAT = { contrato_assinado: 'Contrato', aditivo: 'Aditivos contratuais', termo: 'Termos', laudo: 'Laudos', fianca: 'Documentos garantia', documentos_pessoais: 'Documentos pessoais', comprovante: 'Comprovante', planta: 'Planta', outro: 'Outros' };
-          const tituloCat = LABELS_CAT[a.categoria] || (a.categoria || 'Arquivo');
-          row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto auto;gap:10px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px';
-          row.innerHTML =
-            '<span style="font-size:20px">📄</span>' +
-            '<div style="min-width:0"><div style="font-weight:600;color:var(--ink)">' + tituloCat + '</div>' +
-              '<div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (a.nome_original || '?') + (tamanho ? ' · ' + tamanho : '') + '</div></div>' +
-            '<button type="button" class="btn outline sm" data-ver style="font-size:11px;padding:5px 10px">👁 Ver</button>' +
-            '<label class="btn ghost sm" style="font-size:11px;padding:5px 10px;cursor:pointer;margin:0">📎 Substituir<input type="file" data-substituir accept="application/pdf" style="display:none"></label>' +
-            '<button type="button" class="btn ghost sm" data-excluir style="font-size:11px;padding:5px 10px;color:#dc2626" title="Excluir arquivo">🗑</button>';
-          row.querySelector('[data-ver]').addEventListener('click', async function() {
-            try {
-              const url = await getArquivoUrl(a.storage_path);
-              if (url) window.open(url, '_blank');
-              else mostrarToast('Arquivo não encontrado', 'error');
-            } catch (err) {
-              mostrarToast('Erro: ' + err.message, 'error');
-            }
-          });
-          row.querySelector('[data-substituir]').addEventListener('change', async function(ev) {
-            const f = ev.target.files && ev.target.files[0];
-            if (!f) return;
-            try {
-              const novo = await uploadArquivo(f, {
-                entidade_tipo: 'contrato',
-                entidade_id: id,
-                categoria: a.categoria || 'outro'
-              });
-              // Não deleto o antigo (mantém histórico). Apenas mostra que tem o novo.
-              mostrarToast('Arquivo enviado. O anterior fica como histórico.', 'success');
-              await renderArquivos();
-            } catch (err) {
-              mostrarToast('Erro ao substituir: ' + err.message, 'error');
-            }
-          });
-          row.querySelector('[data-excluir]').addEventListener('click', async function() {
-            if (!(await confirmarAcao({ titulo: 'Excluir arquivo', mensagem: 'Excluir definitivamente o arquivo "' + (a.nome_original || tituloCat) + '"?\n\nEsta ação não pode ser desfeita.', confirmLabel: 'Excluir', perigo: true }))) return;
-            try {
-              await deleteArquivo(a.id, a.storage_path);
-              mostrarToast('Arquivo excluido', 'success');
-              await renderArquivos();
-            } catch (err) {
-              mostrarToast('Erro ao excluir: ' + err.message, 'error');
-            }
-          });
-          arqList.appendChild(row);
-        });
-      } catch (err) {
-        console.error('Erro ao carregar arquivos:', err);
-        arqList.innerHTML = '<div style="padding:14px;color:#991b1b;font-size:12px">Falha ao carregar arquivos: ' + err.message + '</div>';
-      }
-    }
-
-    // Botão "+ Anexar novo arquivo" (ex: aditivo)
-    const addBox = el('div');
-    addBox.style.cssText = 'margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
-    const selCat = el('select');
-    selCat.style.cssText = 'padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px';
-    [
-      { v: 'contrato_assinado',   l: 'Contrato' },
-      { v: 'aditivo',             l: 'Aditivos contratuais' },
-      { v: 'termo',               l: 'Termos' },
-      { v: 'laudo',               l: 'Laudos' },
-      { v: 'fianca',              l: 'Documentos garantia' },
-      { v: 'documentos_pessoais', l: 'Documentos pessoais' },
-      { v: 'outro',               l: 'Outros' }
-    ].forEach(function(o) {
-      const op = el('option', { value: o.v }, o.l);
-      selCat.appendChild(op);
-    });
-    const inpNovo = el('input', { type: 'file', accept: 'application/pdf,image/jpeg,image/png', style: 'display:none' });
-    const inpId = 'inp-novo-arq-' + id;
-    inpNovo.id = inpId;
-    const lblNovo = el('label', { className: 'btn outline sm', style: 'font-size:11px;padding:5px 10px;cursor:pointer;margin:0' }, '+ Anexar novo arquivo');
-    lblNovo.htmlFor = inpId;
-    addBox.appendChild(selCat);
-    addBox.appendChild(lblNovo);
-    addBox.appendChild(inpNovo);
-    secArq.appendChild(addBox);
-
-    inpNovo.addEventListener('change', async function(ev) {
-      const f = ev.target.files && ev.target.files[0];
-      if (!f) return;
-      try {
-        await uploadArquivo(f, {
-          entidade_tipo: 'contrato',
-          entidade_id: id,
-          categoria: selCat.value
-        });
-        mostrarToast('Arquivo anexado', 'success');
-        inpNovo.value = '';
-        await renderArquivos();
-      } catch (err) {
-        mostrarToast('Erro: ' + err.message, 'error');
-      }
-    });
-
-    body.appendChild(secArq);
-    renderArquivos();
-  }
-
-  // Documentos do contrato (só ao editar contrato existente — precisa do id pra vincular)
-  if (id) {
-    const secDocs = el('div', { className: 'form-section' });
-    secDocs.appendChild(el('div', { className: 'form-section-title' }, 'Documentos do contrato (seguros, certidões, AVCB)'));
-    secDocs.appendChild(el('div', {
-      style: { fontSize: '12px', color: 'var(--ink-soft)', marginBottom: '10px' }
-    }, 'Cadastre documentos com data de validade para receber alertas automáticos antes do vencimento.'));
-    const docsContainer = el('div', { id: 'docs-list-' + id });
-    secDocs.appendChild(docsContainer);
-    const btnAdd = el('button', { type: 'button', className: 'btn outline sm' }, '+ Adicionar documento');
-    btnAdd.style.marginTop = '10px';
-    const formContainer = el('div', { style: { display: 'none', marginTop: '12px' } });
-    secDocs.appendChild(btnAdd);
-    secDocs.appendChild(formContainer);
-
-    const recarregar = async () => {
-      const docs = await getDocumentosByContrato(id);
-      renderDocsList(docs, docsContainer, mostrarForm);
-    };
-
-    function mostrarForm(docEdit) {
-      btnAdd.style.display = 'none';
-      formContainer.style.display = 'block';
-      formContainer.innerHTML = '';
-      formContainer.appendChild(renderDocForm(id, docEdit || null, async () => {
-        formContainer.innerHTML = '';
-        formContainer.style.display = 'none';
-        btnAdd.style.display = 'inline-block';
-        await recarregar();
-      }));
-    }
-
-    btnAdd.addEventListener('click', () => mostrarForm(null));
-    body.appendChild(secDocs);
-    recarregar().catch(err => console.error('Erro ao carregar documentos:', err));
+    const secAviso = el('div', { className: 'form-section' });
+    secAviso.appendChild(el('div', { className: 'form-section-title' }, '📄 Anexos do contrato'));
+    secAviso.appendChild(el('div', {
+      style: { padding: '14px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', fontSize: '13px', color: '#0c4a6e' }
+    }, 'Os anexos (contrato, aditivos, seguros, certidões, AVCB, etc.) agora ficam centralizados na aba "📄 Anexos" da ficha do contrato. Feche este modal e clique na aba Anexos pra adicionar/editar.'));
+    body.appendChild(secAviso);
   }
 
   // Upload OBRIGATÓRIO de contrato assinado (somente em contratos NOVOS)
@@ -462,10 +314,20 @@ export async function abrirFormContrato(id = null, opts = {}) {
       if (pdfFile && contrato?.id) {
         try {
           const { uploadArquivo } = await import('./upload.js');
-          await uploadArquivo(pdfFile, {
+          const { saveDocumento } = await import('./data-layer.js');
+          const arq = await uploadArquivo(pdfFile, {
             entidade_tipo: 'contrato',
             entidade_id: contrato.id,
-            categoria: 'contrato_assinado'
+            categoria: 'contrato'
+          });
+          // Cria também o registro em `documentos` (tabela unificada dos anexos)
+          await saveDocumento({
+            contrato_id: contrato.id,
+            tipo: 'contrato',
+            descricao: 'PDF do contrato assinado',
+            arquivo_url: arq?.storage_path || null,
+            nome_original: pdfFile.name,
+            tamanho_bytes: pdfFile.size
           });
         } catch (err) {
           console.error('Upload do PDF falhou:', err);
