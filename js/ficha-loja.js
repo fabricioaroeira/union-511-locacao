@@ -280,10 +280,16 @@ function renderResumo(c, dados) {
 
   // Bloco 1: condições principais
   const bloco1 = el('div', { className: 'resumo-bloco' });
+  const temReajuste = c.valor_base != null && Number(c.valor_base) !== Number(c.valor_aluguel);
+  const linhaAluguel = temReajuste
+    ? `<div><strong>Aluguel vigente:</strong> <span style="color:#15803d;font-weight:700">${formatMoney(c.valor_aluguel)}</span>/mês</div>
+       <div><strong>Valor base do contrato:</strong> <span style="color:var(--ink-soft)">${formatMoney(c.valor_base)}</span> <em style="font-size:11px;color:#94a3b8">(desde ${escapeHtml(c.data_inicio || '—')})</em></div>`
+    : `<div><strong>Aluguel:</strong> ${formatMoney(c.valor_aluguel)}/mês <em style="font-size:11px;color:#94a3b8">(sem reajustes lançados)</em></div>
+       <div></div>`;
   bloco1.innerHTML = `
     <h3>📋 Condições do contrato</h3>
     <div class="resumo-grid">
-      <div><strong>Aluguel:</strong> ${formatMoney(c.valor_aluguel)}/mês</div>
+      ${linhaAluguel}
       <div><strong>Dia vencimento:</strong> ${String(c.dia_vencimento).padStart(2,'0')}</div>
       <div><strong>Carência:</strong> ${c.meses_carencia || 0} meses</div>
       <div><strong>Prazo:</strong> ${c.prazo_meses} meses (${(c.prazo_meses/12).toFixed(1)} anos)</div>
