@@ -9,6 +9,7 @@ import {
   getGestoesPorContrato, atualizarGestaoAtivo, getHistoricoContrato,
   getInquilinos, getLojasStatus, saveContrato,
   getAnexosContrato,
+  getReajustes, aplicarReajuste,
   getOcorrenciasPorGestao, marcarOcorrenciaCumprida, reabrirOcorrencia
 } from './data-layer.js';
 import { abrirFormContrato } from './forms-contrato.js';
@@ -120,12 +121,13 @@ async function renderFicha() {
   card.innerHTML = '<div style="padding:60px;text-align:center;color:var(--ink-soft)">⏳ Carregando ficha da loja...</div>';
 
   try {
-    const [contrato, anexos, gestoes, historico, lojasStatus] = await Promise.all([
+    const [contrato, anexos, gestoes, historico, lojasStatus, reajustes] = await Promise.all([
       getContrato(_contratoAtivo),
       getAnexosContrato(_contratoAtivo).catch(() => []),
       getGestoesPorContrato(_contratoAtivo).catch(() => []),
       getHistoricoContrato(_contratoAtivo).catch(() => []),
-      getLojasStatus().catch(() => [])
+      getLojasStatus().catch(() => []),
+      getReajustes(_contratoAtivo).catch(() => [])
     ]);
 
     if (!contrato) {
@@ -134,7 +136,7 @@ async function renderFicha() {
     }
 
     card.innerHTML = '';
-    card.appendChild(montarFicha(contrato, { anexos, gestoes, historico, lojasStatus }));
+    card.appendChild(montarFicha(contrato, { anexos, gestoes, historico, lojasStatus, reajustes }));
   } catch (err) {
     console.error('Erro ao montar ficha:', err);
     card.innerHTML = '<div style="padding:40px;color:#991b1b">Erro: ' + escapeHtml(err.message) + '</div>';
@@ -341,10 +343,140 @@ function renderResumo(c, dados) {
   `;
   div.appendChild(bloco2);
 
+  // Bloco extra: histórico de reajustes (valor base + reajustes lançados)
+  div.appendChild(montarBlocoReajustes(c, dados.reajustes || []));
+
   // Bloco 3: Cláusulas-chave do contrato (lidas pela IA)
   div.appendChild(montarBlocoClausulas(c));
 
   return div;
+}
+
+// =====================================================================
+// Bloco: Histórico de reajustes (aba Resumo)
+// =====================================================================
+function montarBlocoReajustes(c, reajustes) {
+  const bloco = el('div', { className: 'resumo-bloco' });
+  const valorBase = c.valor_base != null ? Number(c.valor_base) : Number(c.valor_aluguel);
+  const vigente = Number(c.valor_aluguel);
+  const reajustesOrd = [...(reajustes || [])].sort((a, b) =>
+    new Date(a.data_efetivacao) - new Date(b.data_efetivacao)
+  );
+
+  const linhasReaj = reajustesOrd.map(r => {
+    const variacao = (r.variacao_pct != null)
+      ? (Number(r.variacao_pct) > 0 ? '+' : '') + Number(r.variacao_pct).toFixed(2) + '%'
+      : '—';
+    const tipo = r.indice ? escapeHtml(r.indice) : '<span style="color:#94a3b8">—</span>';
+    const obs = r.observacoes ? '<div style="font-size:11px;color:var(--ink-soft);margin-top:2px">' + escapeHtml(r.observacoes) + '</div>' : '';
+    return `
+      <tr>
+        <td>${fmtBR(r.data_efetivacao) || '?'}</td>
+        <td>${tipo}</td>
+        <td style="color:var(--ink-soft)">${formatMoney(r.valor_anterior)}</td>
+        <td style="font-weight:600;color:#15803d">${formatMoney(r.valor_novo)}</td>
+        <td style="font-weight:600">${variacao}</td>
+        <td>${obs}</td>
+      </tr>
+    `;
+  }).join('');
+
+  bloco.innerHTML = `
+    <h3 style="display:flex;justify-content:space-between;align-items:center">
+      <span>💰 Histórico de reajustes</span>
+      <button type="button" class="btn sm" data-novo-reaj style="font-size:11px">+ Lançar reajuste</button>
+    </h3>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+      <div><strong>Valor base do contrato:</strong> ${formatMoney(valorBase)}</div>
+      <div><strong>Valor vigente:</strong> <span style="color:#15803d;font-weight:700">${formatMoney(vigente)}</span></div>
+      <div><strong>Reajustes lançados:</strong> ${reajustesOrd.length}</div>
+    </div>
+    ${reajustesOrd.length === 0
+      ? '<div style="padding:14px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;text-align:center;color:var(--ink-soft);font-size:12px">Nenhum reajuste lançado. O valor vigente é igual ao valor base do contrato.</div>'
+      : '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;text-align:left"><th style="padding:6px 8px">Vigência</th><th style="padding:6px 8px">Tipo</th><th style="padding:6px 8px">Anterior</th><th style="padding:6px 8px">Novo</th><th style="padding:6px 8px">Variação</th><th style="padding:6px 8px">Obs</th></tr></thead><tbody>' + linhasReaj + '</tbody></table>'
+    }
+  `;
+  bloco.querySelector('[data-novo-reaj]').onclick = () => abrirFormReajuste(c, vigente);
+  return bloco;
+}
+
+// Modal: Lançar reajuste
+function abrirFormReajuste(contrato, valorVigenteAtual) {
+  const body = el('div');
+  body.innerHTML = `
+    <div style="padding:10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:4px;margin-bottom:14px;font-size:12px;color:#1e40af">
+      <strong>Valor vigente atual:</strong> ${formatMoney(valorVigenteAtual)}.
+      O valor novo abaixo passa a vigorar a partir da data informada. As cobranças já criadas no passado não são alteradas.
+    </div>
+    <div class="form-grid">
+      <div class="form-field"><label>Data de efetivação *</label>
+        <input type="date" name="data_efetivacao" value="${new Date().toISOString().slice(0,10)}" required>
+      </div>
+      <div class="form-field"><label>Valor novo (R$) *</label>
+        <input type="number" name="valor_novo" step="0.01" min="0" required placeholder="0,00">
+      </div>
+      <div class="form-field"><label>Tipo / Índice (opcional)</label>
+        <select name="indice">
+          <option value="">— (não especificado)</option>
+          <option value="IGP-M">IGP-M</option>
+          <option value="IPCA">IPCA</option>
+          <option value="INPC">INPC</option>
+          <option value="Negociação">Negociação</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div class="form-field"><label>Variação % (calculada)</label>
+        <input type="text" name="variacao_calc" readonly placeholder="preencha o valor novo" style="background:#f8fafc">
+      </div>
+      <div class="form-field full"><label>Observações (opcional)</label>
+        <textarea name="observacoes" rows="2" placeholder="Ex: renegociado com cliente em troca de prazo maior"></textarea>
+      </div>
+    </div>
+  `;
+
+  // Calcula % automaticamente conforme digita
+  const inpNovo = body.querySelector('[name="valor_novo"]');
+  const inpCalc = body.querySelector('[name="variacao_calc"]');
+  const recalcular = () => {
+    const v = Number(inpNovo.value);
+    if (!v || valorVigenteAtual <= 0) { inpCalc.value = ''; return; }
+    const pct = ((v - valorVigenteAtual) / valorVigenteAtual) * 100;
+    inpCalc.value = (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
+  };
+  inpNovo.addEventListener('input', recalcular);
+
+  abrirModal({
+    titulo: '💰 Lançar reajuste',
+    body,
+    submitLabel: 'Salvar reajuste',
+    onSubmit: async () => {
+      const form = body.closest('form');
+      const fd = new FormData(form);
+      const valorNovo = Number(fd.get('valor_novo'));
+      const dataEf = fd.get('data_efetivacao');
+      if (!valorNovo || valorNovo <= 0) throw new Error('Informe o valor novo.');
+      if (!dataEf) throw new Error('Informe a data de efetivação.');
+      const variacaoPct = valorVigenteAtual > 0
+        ? ((valorNovo - valorVigenteAtual) / valorVigenteAtual) * 100
+        : null;
+      await aplicarReajuste({
+        contrato_id: contrato.id,
+        valor_anterior: valorVigenteAtual,
+        valor_novo: valorNovo,
+        indice: fd.get('indice') || null,
+        variacao_pct: variacaoPct,
+        data_efetivacao: dataEf,
+        periodo_inicio: null,
+        periodo_fim: null,
+        observacoes: fd.get('observacoes') || null
+      });
+      mostrarToast('Reajuste lançado. Valor vigente atualizado para ' + formatMoney(valorNovo), 'success');
+      await renderTudo();
+      // Recarrega a ficha pra refletir o novo valor
+      const { abrirFichaLoja } = await import('./ficha-loja.js');
+      abrirFichaLoja(contrato.id);
+    }
+  });
 }
 
 // =====================================================================
