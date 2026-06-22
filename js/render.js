@@ -18,6 +18,7 @@ import { abrirFormContrato } from './forms-contrato.js';
 import { abrirFichaLoja, getFichaLojaAtiva } from './ficha-loja.js';
 import { abrirFormProposta } from './forms-proposta.js';
 import { abrirFormLead } from './forms-lead.js';
+import { abrirFormInquilino } from './forms-inquilino.js';
 import { renderPlanta } from './planta-view.js';
 import { getState } from './state.js';
 
@@ -303,10 +304,11 @@ function renderInquilinosCards(inquilinos, contratos) {
   const sorted = [...contratos].sort((a,b) => Number(a.lojas?.[0]||0) - Number(b.lojas?.[0]||0));
   sorted.forEach(c => {
     const inq = inquilinos.find(i => i.id === c.inquilino_id) || {};
-    const div = el('div', { className: 'tenant' });
+    const div = el('div', { className: 'tenant', style: 'cursor:pointer;transition:background .15s' });
+    div.title = 'Clique pra editar o inquilino';
     div.innerHTML = `
       <div>
-        <div class="tenant-name">${inq.nome_fantasia || inq.razao_social}</div>
+        <div class="tenant-name">${inq.nome_fantasia || inq.razao_social} <span style="font-size:11px;color:#94a3b8;font-weight:400">✏️</span></div>
         <div class="tenant-units">${inq.razao_social}</div>
         <div class="tenant-units" style="margin-top:2px">CNPJ/CPF: ${inq.documento}</div>
       </div>
@@ -320,6 +322,11 @@ function renderInquilinosCards(inquilinos, contratos) {
       </div>
       <div class="tenant-meta">${c.observacoes || ''}</div>
     `;
+    if (inq.id) {
+      div.addEventListener('click', () => abrirFormInquilino(inq.id));
+      div.addEventListener('mouseenter', () => { div.style.background = '#f8fafc'; });
+      div.addEventListener('mouseleave', () => { div.style.background = ''; });
+    }
     tlist.appendChild(div);
   });
 }
