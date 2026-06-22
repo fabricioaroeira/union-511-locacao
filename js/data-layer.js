@@ -15,7 +15,7 @@
 //   - getArquivos(entidadeTipo, entidadeId) / uploadArquivo(...)
 // =====================================================================
 
-import { MOCK_MODE, getSupabase } from './supabase-client.js';
+import { MOCK_MODE, getSupabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-client.js';
 import { parseBR, addMonths, fmtBR } from './utils.js';
 
 // ---------------------------------------------------------------------
