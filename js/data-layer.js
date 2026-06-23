@@ -1268,9 +1268,24 @@ export async function importarSiengePDF(contratoId, pdfFile) {
   const { extrairSiengeDoPDF } = await import('./claude.js');
   const extraido = await extrairSiengeDoPDF(pdfFile);
 
-  // extraido = { meta: {...}, parcelas: [...], totais: {...} }
-  const parcelas = Array.isArray(extraido?.parcelas) ? extraido.parcelas : [];
-  if (parcelas.length === 0) throw new Error('IA não conseguiu extrair nenhuma parcela do PDF.');
+  // extraido = { meta, campos: [...], parcelas: [[...arrays...]], totais }
+  const parcelasRaw = Array.isArray(extraido?.parcelas) ? extraido.parcelas : [];
+  if (parcelasRaw.length === 0) throw new Error('IA não conseguiu extrair nenhuma parcela do PDF.');
+
+  // Schema: a IA retorna parcelas como arrays compactos. Os campos vêm em extraido.campos
+  // Ordem padrão: [sienge_codigo, componente, parcela_num, parcela_total, data_vencimento,
+  //                valor_original, valor_corrigido, indexador, data_pagamento, valor_pago, status]
+  const camposDefault = ['sienge_codigo','componente','parcela_num','parcela_total','data_vencimento','valor_original','valor_corrigido','indexador','data_pagamento','valor_pago','status'];
+  const campos = Array.isArray(extraido?.campos) && extraido.campos.length > 0 ? extraido.campos : camposDefault;
+
+  // Converte cada array em objeto
+  const parcelas = parcelasRaw.map(p => {
+    // Se a IA já retornou objeto (compatibilidade), passa direto
+    if (!Array.isArray(p)) return p;
+    const obj = {};
+    campos.forEach((c, idx) => { obj[c] = p[idx]; });
+    return obj;
+  });
 
   // 2) Hoje pra calcular status
   const hoje = new Date().toISOString().slice(0, 10);
@@ -1283,18 +1298,20 @@ export async function importarSiengePDF(contratoId, pdfFile) {
       else if (p.data_vencimento && p.data_vencimento < hoje) status = 'atrasada';
       else status = 'a_vencer';
     }
+    // sienge_titulo (legível) reconstruído se a IA não mandar
+    const sienge_titulo = p.sienge_titulo || (p.sienge_titulo_id ? `${p.sienge_titulo_id} / ${p.sienge_codigo}` : p.sienge_codigo);
     return {
       contrato_id: contratoId,
-      sienge_titulo: p.sienge_titulo,
+      sienge_titulo: sienge_titulo,
       sienge_titulo_id: p.sienge_titulo_id || null,
       sienge_codigo: p.sienge_codigo,
       componente: p.componente || 'outros',
-      parcela_num: p.parcela_num || null,
-      parcela_total: p.parcela_total || null,
-      parcela_rotulo: p.parcela_rotulo || null,
+      parcela_num: p.parcela_num != null ? Number(p.parcela_num) : null,
+      parcela_total: p.parcela_total != null ? Number(p.parcela_total) : null,
+      parcela_rotulo: p.parcela_rotulo || (p.parcela_num && p.parcela_total ? `${p.parcela_num}/${p.parcela_total}` : null),
       data_vencimento: p.data_vencimento,
       valor_original: Number(p.valor_original),
-      valor_corrigido: Number(p.valor_corrigido || p.valor_original),
+      valor_corrigido: Number(p.valor_corrigido != null ? p.valor_corrigido : p.valor_original),
       indexador: p.indexador || null,
       data_pagamento: p.data_pagamento || null,
       valor_pago: p.valor_pago != null ? Number(p.valor_pago) : null,
