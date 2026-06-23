@@ -42,6 +42,7 @@ export async function extrairContratoDoPDF(pdfFile)    { return callExtract('ext
 export async function extrairPropostaDoPDF(pdfFile)    { return callExtract('extract_proposal', pdfFile, 'extração'); }
 export async function extrairClausulasDoPDF(pdfFile)   { return callExtract('extract_clauses',  pdfFile, 'extração de cláusulas'); }
 export async function extrairDocumentoDoPDF(pdfFile)   { return callExtract('extract_document', pdfFile, 'extração'); }
+export async function extrairSiengeDoPDF(pdfFile)      { return callExtract('extract_sienge',   pdfFile, 'extração SIENGE'); }
 
 export async function chatComClaude(messages, dbContext = '') {
   const headers = await authHeaders();

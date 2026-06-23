@@ -10,6 +10,7 @@ import {
   getInquilinos, getLojasStatus, saveContrato,
   getAnexosContrato,
   getReajustes, aplicarReajuste,
+  getSiengeParcelas, getSaldoSiengePorContrato, importarSiengePDF,
   getOcorrenciasPorGestao, marcarOcorrenciaCumprida, reabrirOcorrencia
 } from './data-layer.js';
 import { abrirFormContrato } from './forms-contrato.js';
@@ -121,13 +122,15 @@ async function renderFicha() {
   card.innerHTML = '<div style="padding:60px;text-align:center;color:var(--ink-soft)">⏳ Carregando ficha da loja...</div>';
 
   try {
-    const [contrato, anexos, gestoes, historico, lojasStatus, reajustes] = await Promise.all([
+    const [contrato, anexos, gestoes, historico, lojasStatus, reajustes, siengeParcelas, saldoSienge] = await Promise.all([
       getContrato(_contratoAtivo),
       getAnexosContrato(_contratoAtivo).catch(() => []),
       getGestoesPorContrato(_contratoAtivo).catch(() => []),
       getHistoricoContrato(_contratoAtivo).catch(() => []),
       getLojasStatus().catch(() => []),
-      getReajustes(_contratoAtivo).catch(() => [])
+      getReajustes(_contratoAtivo).catch(() => []),
+      getSiengeParcelas(_contratoAtivo).catch(() => []),
+      getSaldoSiengePorContrato(_contratoAtivo).catch(() => null)
     ]);
 
     if (!contrato) {
@@ -136,7 +139,7 @@ async function renderFicha() {
     }
 
     card.innerHTML = '';
-    card.appendChild(montarFicha(contrato, { anexos, gestoes, historico, lojasStatus, reajustes }));
+    card.appendChild(montarFicha(contrato, { anexos, gestoes, historico, lojasStatus, reajustes, siengeParcelas, saldoSienge }));
   } catch (err) {
     console.error('Erro ao montar ficha:', err);
     card.innerHTML = '<div style="padding:40px;color:#991b1b">Erro: ' + escapeHtml(err.message) + '</div>';
@@ -164,10 +167,12 @@ function montarFicha(contrato, dados) {
   // ============== TABS ==============
   const tabBar = el('div', { className: 'ficha-tabs' });
   const totalAnexos = (dados.anexos || []).length;
+  const qtdSienge = (dados.siengeParcelas || []).length;
   const tabs = [
     { id: 'resumo',    label: '📊 Resumo' },
     { id: 'dados',     label: '📝 Dados do contrato' },
     { id: 'anexos',    label: '📄 Anexos (' + totalAnexos + ')' },
+    { id: 'sienge',    label: '💰 SIENGE' + (qtdSienge ? ' (' + qtdSienge + ')' : '') },
     { id: 'gestoes',   label: '🤖 Gestões (' + dados.gestoes.filter(g => g.ativo).length + ')' },
     { id: 'historico', label: '🕐 Histórico (' + dados.historico.length + ')' }
   ];
@@ -259,6 +264,8 @@ function renderConteudoAba(container, aba, contrato, dados) {
     container.appendChild(renderAbaDados(contrato));
   } else if (aba === 'anexos') {
     container.appendChild(renderListaAnexos(dados.anexos, contrato.id));
+  } else if (aba === 'sienge') {
+    container.appendChild(renderAbaSienge(contrato, dados.siengeParcelas || [], dados.saldoSienge));
   } else if (aba === 'gestoes') {
     container.appendChild(renderListaGestoes(dados.gestoes, contrato.id));
   } else if (aba === 'historico') {
@@ -959,6 +966,244 @@ function abrirFormAnexoInline(anexo, contratoId, onSalvar) {
       await onSalvar();
     }
   });
+}
+
+// =====================================================================
+// ABA: SIENGE — Cronograma de parcelas espelhado do sistema oficial
+// =====================================================================
+const LABELS_COMPONENTE_SIENGE = {
+  aluguel: 'Aluguel',
+  condominio: 'Condomínio',
+  iptu: 'IPTU',
+  recibo: 'Recibo / Ajuste',
+  outros: 'Outros'
+};
+const COR_COMPONENTE = {
+  aluguel: '#15803d',
+  condominio: '#0369a1',
+  iptu: '#b45309',
+  recibo: '#7c3aed',
+  outros: '#64748b'
+};
+
+function renderAbaSienge(contrato, parcelas, saldo) {
+  const div = el('div', { className: 'ficha-bloco' });
+  const temDados = parcelas && parcelas.length > 0;
+
+  // ===== HEADER =====
+  const ultImport = saldo?.ultima_importacao
+    ? new Date(saldo.ultima_importacao).toLocaleDateString('pt-BR') + ' ' + new Date(saldo.ultima_importacao).toLocaleTimeString('pt-BR').slice(0,5)
+    : '—';
+  div.innerHTML = `
+    <h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span>💰 Cronograma SIENGE — fonte oficial das cobranças</span>
+      <button type="button" class="btn sm" data-importar style="font-size:11px">📎 ${temDados ? 'Atualizar' : 'Importar'} PDF</button>
+    </h3>
+    <p style="color:var(--ink-soft);font-size:12px;margin-bottom:10px">
+      Cronograma de parcelas espelhado do sistema SIENGE (Saldo Devedor Presente). A IA lê o PDF e popula esta aba automaticamente. ${temDados ? 'Última atualização: <strong>' + ultImport + '</strong>' : '<em>Ainda não importado.</em>'}
+    </p>
+  `;
+
+  // Container do form de import (escondido inicialmente)
+  const formImport = el('div', { style: 'display:none;margin-bottom:14px' });
+  div.appendChild(formImport);
+
+  // ===== KPIs do saldo =====
+  if (temDados && saldo) {
+    const kpis = el('div', { style: 'display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px' });
+    const cards = [
+      { label: 'Total a vencer', valor: formatMoney(saldo.total_a_vencer || 0), cor: '#15803d' },
+      { label: 'Total recebido', valor: formatMoney(saldo.total_pago || 0), cor: '#0369a1' },
+      { label: 'Atrasadas', valor: (saldo.qtd_atrasadas || 0) + ' parcela(s)', cor: (saldo.qtd_atrasadas || 0) > 0 ? '#dc2626' : '#94a3b8' },
+      { label: 'Mês atual', valor: formatMoney(saldo.valor_mes_atual || 0), cor: '#7c3aed' }
+    ];
+    cards.forEach(c => {
+      const card = el('div', { style: 'background:#f8fafc;border-radius:8px;padding:10px 12px' });
+      card.innerHTML = `
+        <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;font-weight:600">${c.label}</div>
+        <div style="font-size:16px;font-weight:700;color:${c.cor};margin-top:3px">${c.valor}</div>
+      `;
+      kpis.appendChild(card);
+    });
+    div.appendChild(kpis);
+  }
+
+  // ===== Filtros =====
+  const filtros = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:12px' });
+  filtros.innerHTML = `
+    <select data-fil-comp style="padding:4px 8px;border:1px solid var(--line);border-radius:4px;font-size:12px">
+      <option value="">Todos os componentes</option>
+      <option value="aluguel">Aluguel</option>
+      <option value="condominio">Condomínio</option>
+      <option value="iptu">IPTU</option>
+      <option value="recibo">Recibo</option>
+      <option value="outros">Outros</option>
+    </select>
+    <select data-fil-status style="padding:4px 8px;border:1px solid var(--line);border-radius:4px;font-size:12px">
+      <option value="">Todos os status</option>
+      <option value="a_vencer">A vencer</option>
+      <option value="atrasada">Atrasada</option>
+      <option value="paga">Paga</option>
+    </select>
+    <select data-fil-periodo style="padding:4px 8px;border:1px solid var(--line);border-radius:4px;font-size:12px">
+      <option value="prox12">Próximos 12 meses</option>
+      <option value="prox6">Próximos 6 meses</option>
+      <option value="atrasadas">Apenas atrasadas</option>
+      <option value="pagas_recentes">Pagas recentes (últimas 12)</option>
+      <option value="todas">Todas</option>
+    </select>
+  `;
+  if (temDados) div.appendChild(filtros);
+
+  // ===== Tabela =====
+  const tabelaContainer = el('div');
+  div.appendChild(tabelaContainer);
+
+  const renderTabela = () => {
+    const filComp = filtros.querySelector('[data-fil-comp]')?.value || '';
+    const filStatus = filtros.querySelector('[data-fil-status]')?.value || '';
+    const filPeriodo = filtros.querySelector('[data-fil-periodo]')?.value || 'prox12';
+
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const fim12 = new Date(hoje); fim12.setMonth(fim12.getMonth() + 12);
+    const fim6 = new Date(hoje); fim6.setMonth(fim6.getMonth() + 6);
+
+    let filtradas = parcelas.filter(p => {
+      if (filComp && p.componente !== filComp) return false;
+      if (filStatus && p.status !== filStatus) return false;
+      const dv = p.data_vencimento ? new Date(p.data_vencimento) : null;
+      if (filPeriodo === 'prox12' && dv && (dv < hoje || dv > fim12) && p.status !== 'atrasada') return false;
+      if (filPeriodo === 'prox6' && dv && (dv < hoje || dv > fim6) && p.status !== 'atrasada') return false;
+      if (filPeriodo === 'atrasadas' && p.status !== 'atrasada') return false;
+      if (filPeriodo === 'pagas_recentes' && p.status !== 'paga') return false;
+      return true;
+    });
+    if (filPeriodo === 'pagas_recentes') {
+      filtradas = filtradas.sort((a, b) => new Date(b.data_pagamento || 0) - new Date(a.data_pagamento || 0)).slice(0, 12);
+    } else {
+      filtradas = filtradas.sort((a, b) => new Date(a.data_vencimento) - new Date(b.data_vencimento));
+    }
+
+    if (filtradas.length === 0) {
+      tabelaContainer.innerHTML = '<div class="ficha-vazio">Nenhuma parcela com os filtros atuais.</div>';
+      return;
+    }
+
+    const total = filtradas.reduce((s, p) => s + Number(p.valor_corrigido || 0), 0);
+    const linhas = filtradas.map(p => {
+      const corC = COR_COMPONENTE[p.componente] || '#64748b';
+      const lblC = LABELS_COMPONENTE_SIENGE[p.componente] || p.componente;
+      let badgeStatus = '';
+      if (p.status === 'paga') badgeStatus = '<span class="badge" style="background:#dcfce7;color:#15803d">Paga</span>';
+      else if (p.status === 'atrasada') badgeStatus = '<span class="badge" style="background:#fee2e2;color:#991b1b">Atrasada</span>';
+      else badgeStatus = '<span class="badge" style="background:#f1f5f9;color:#64748b">A vencer</span>';
+      const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : '?';
+      const pag = p.data_pagamento ? new Date(p.data_pagamento + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+      return `
+        <tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:6px 8px">${venc}</td>
+          <td style="padding:6px 8px;font-size:11px"><span style="color:${corC};font-weight:600">${lblC}</span><br><span style="color:#94a3b8">${escapeHtml(p.sienge_codigo || '')} ${p.parcela_rotulo ? '· ' + p.parcela_rotulo : ''}</span></td>
+          <td style="padding:6px 8px;text-align:right;font-weight:600">${formatMoney(p.valor_corrigido)}</td>
+          <td style="padding:6px 8px">${badgeStatus}</td>
+          <td style="padding:6px 8px;font-size:11px;color:var(--ink-soft)">${pag}${p.valor_pago ? ' · ' + formatMoney(p.valor_pago) : ''}</td>
+        </tr>
+      `;
+    }).join('');
+
+    tabelaContainer.innerHTML = `
+      <div style="margin-bottom:6px;font-size:12px;color:var(--ink-soft)"><strong>${filtradas.length}</strong> parcela(s) · Total: <strong>${formatMoney(total)}</strong></div>
+      <div style="max-height:500px;overflow-y:auto;border:1px solid var(--line);border-radius:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead style="background:#f1f5f9;position:sticky;top:0">
+            <tr>
+              <th style="padding:8px;text-align:left">Vencimento</th>
+              <th style="padding:8px;text-align:left">Componente / Título</th>
+              <th style="padding:8px;text-align:right">Valor</th>
+              <th style="padding:8px;text-align:left">Status</th>
+              <th style="padding:8px;text-align:left">Pagamento</th>
+            </tr>
+          </thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  if (temDados) {
+    renderTabela();
+    filtros.querySelectorAll('select').forEach(s => s.addEventListener('change', renderTabela));
+  } else {
+    tabelaContainer.innerHTML = '<div class="ficha-vazio">Nenhum cronograma SIENGE importado ainda. Clique em "📎 Importar PDF" acima pra subir o relatório <em>Saldo Devedor Presente</em> exportado do SIENGE.</div>';
+  }
+
+  // ===== Botão importar abre form =====
+  div.querySelector('[data-importar]').onclick = () => {
+    if (formImport.style.display !== 'none') {
+      formImport.style.display = 'none';
+      formImport.innerHTML = '';
+      return;
+    }
+    formImport.style.display = 'block';
+    formImport.appendChild(montarFormImportSienge(contrato.id, async () => {
+      formImport.style.display = 'none';
+      formImport.innerHTML = '';
+      const { abrirFichaLoja } = await import('./ficha-loja.js');
+      abrirFichaLoja(contrato.id);
+    }));
+  };
+
+  return div;
+}
+
+function montarFormImportSienge(contratoId, onFim) {
+  const box = el('div', { style: 'background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px' });
+  box.innerHTML = `
+    <div style="font-size:12px;color:#0c4a6e;margin-bottom:10px">
+      💡 Exporte o <strong>Saldo Devedor Presente</strong> no SIENGE em PDF e anexe abaixo. A IA Claude vai ler todas as parcelas (pagas + a vencer) e popular o cronograma.
+    </div>
+    <input type="file" data-pdf accept="application/pdf" style="font-size:12px;display:block;margin-bottom:10px">
+    <div data-status style="display:none;padding:8px 10px;border-radius:6px;font-size:11px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" class="btn ghost sm" data-cancel>Cancelar</button>
+      <button type="button" class="btn sm" data-go>Importar</button>
+    </div>
+  `;
+  const inp = box.querySelector('[data-pdf]');
+  const status = box.querySelector('[data-status]');
+  const btnCancel = box.querySelector('[data-cancel]');
+  const btnGo = box.querySelector('[data-go]');
+
+  btnCancel.onclick = () => onFim();
+
+  btnGo.onclick = async () => {
+    const f = inp.files?.[0];
+    if (!f) { mostrarToast('Escolha o PDF do SIENGE antes', 'error'); return; }
+    btnGo.disabled = true;
+    btnGo.textContent = 'Importando...';
+    status.style.display = 'block';
+    status.style.background = '#eff6ff';
+    status.style.color = '#1e40af';
+    status.style.border = '1px solid #bfdbfe';
+    status.innerHTML = '🤖 Claude está lendo o PDF e extraindo todas as parcelas... (pode levar 30-60s)';
+    try {
+      const res = await importarSiengePDF(contratoId, f);
+      status.style.background = '#ecfdf5';
+      status.style.color = '#065f46';
+      status.style.border = '1px solid #6ee7b7';
+      status.innerHTML = `✓ Importadas <strong>${res.importadas}</strong> parcelas (de ${res.total_extraidas} extraídas pela IA). Cliente: ${res.meta?.cliente_nome || '?'}.`;
+      mostrarToast(res.importadas + ' parcelas SIENGE importadas', 'success');
+      setTimeout(() => onFim(), 1500);
+    } catch (err) {
+      status.style.background = '#fef2f2';
+      status.style.color = '#991b1b';
+      status.style.border = '1px solid #fecaca';
+      status.innerHTML = '⚠️ Erro: ' + (err.message || err);
+      btnGo.disabled = false;
+      btnGo.textContent = 'Importar';
+    }
+  };
+
+  return box;
 }
 
 // =====================================================================

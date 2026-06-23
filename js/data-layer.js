@@ -1219,3 +1219,100 @@ export async function excluirUsuario(userId) {
   if (MOCK_MODE) return;
   return chamarAdminUsers({ mode: 'delete_user', userId });
 }
+
+// =====================================================================
+// SIENGE — espelho das parcelas (fonte de verdade financeira)
+// =====================================================================
+
+/**
+ * Lista todas as parcelas SIENGE de um contrato, ordenadas por vencimento.
+ */
+export async function getSiengeParcelas(contratoId) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('sienge_parcelas')
+    .select('*')
+    .eq('contrato_id', contratoId)
+    .order('data_vencimento');
+  if (error) throw new Error('Erro ao buscar parcelas SIENGE: ' + error.message);
+  return data || [];
+}
+
+/**
+ * Saldo consolidado SIENGE de um contrato (via view).
+ * Retorna: { tem_sienge, ultima_importacao, total_a_vencer, total_pago, qtd_atrasadas, proxima_parcela, valor_mes_atual }
+ */
+export async function getSaldoSiengePorContrato(contratoId) {
+  if (MOCK_MODE) return null;
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('v_saldo_sienge_por_contrato')
+    .select('*')
+    .eq('contrato_id', contratoId)
+    .limit(1);
+  if (error) return null;
+  return data?.[0] || null;
+}
+
+/**
+ * Importa um PDF de Saldo Devedor do SIENGE pra um contrato.
+ * Lê o PDF via IA, upsert em sienge_parcelas (idempotente).
+ * Retorna: { meta, importadas, atualizadas, total_parcelas }
+ */
+export async function importarSiengePDF(contratoId, pdfFile) {
+  if (MOCK_MODE) throw new Error('Importação SIENGE não disponível em MOCK_MODE');
+  if (!contratoId) throw new Error('contratoId é obrigatório');
+  if (!pdfFile) throw new Error('PDF é obrigatório');
+  if (pdfFile.type !== 'application/pdf') throw new Error('Arquivo precisa ser PDF');
+
+  // 1) Manda PDF pra IA extrair (claude-proxy modo extract_sienge)
+  const { extrairSiengeDoPDF } = await import('./claude.js');
+  const extraido = await extrairSiengeDoPDF(pdfFile);
+
+  // extraido = { meta: {...}, parcelas: [...], totais: {...} }
+  const parcelas = Array.isArray(extraido?.parcelas) ? extraido.parcelas : [];
+  if (parcelas.length === 0) throw new Error('IA não conseguiu extrair nenhuma parcela do PDF.');
+
+  // 2) Hoje pra calcular status
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  // 3) Monta payload com contrato_id e status validado
+  const payload = parcelas.map(p => {
+    let status = p.status;
+    if (!status) {
+      if (p.data_pagamento) status = 'paga';
+      else if (p.data_vencimento && p.data_vencimento < hoje) status = 'atrasada';
+      else status = 'a_vencer';
+    }
+    return {
+      contrato_id: contratoId,
+      sienge_titulo: p.sienge_titulo,
+      sienge_titulo_id: p.sienge_titulo_id || null,
+      sienge_codigo: p.sienge_codigo,
+      componente: p.componente || 'outros',
+      parcela_num: p.parcela_num || null,
+      parcela_total: p.parcela_total || null,
+      parcela_rotulo: p.parcela_rotulo || null,
+      data_vencimento: p.data_vencimento,
+      valor_original: Number(p.valor_original),
+      valor_corrigido: Number(p.valor_corrigido || p.valor_original),
+      indexador: p.indexador || null,
+      data_pagamento: p.data_pagamento || null,
+      valor_pago: p.valor_pago != null ? Number(p.valor_pago) : null,
+      status
+    };
+  });
+
+  // 4) Upsert (idempotente pela unique index contrato+codigo+parcela_num+venc)
+  const supa = await getSupabase();
+  const { data, error } = await supa.from('sienge_parcelas')
+    .upsert(payload, { onConflict: 'contrato_id,sienge_codigo,parcela_num,data_vencimento', ignoreDuplicates: false })
+    .select();
+  if (error) throw new Error('Erro ao salvar parcelas: ' + error.message);
+
+  return {
+    meta: extraido?.meta || null,
+    totais: extraido?.totais || null,
+    importadas: data?.length || 0,
+    total_extraidas: parcelas.length
+  };
+}
