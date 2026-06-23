@@ -1,4 +1,3 @@
-// BUILD: 1782244772 - forcar push
 // =====================================================================
 // RENDER — Toda a lógica de exibição do dashboard
 // =====================================================================
@@ -1197,5 +1196,25 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
     });
     tabela.appendChild(tbody);
     cont.appendChild(tabela);
+  });
+}
+nk');
+          else mostrarToast('Arquivo não encontrado', 'error');
+        } catch (err) {
+          mostrarToast('Erro: ' + err.message, 'error');
+        } finally {
+          b.disabled = false;
+          b.textContent = '📎 Baixar';
+        }
+      });
+      body.appendChild(row);
+    });
+  }
+
+  abrirModal({
+    titulo: 'Documentos da proposta',
+    body,
+    submitLabel: 'Fechar',
+    onSubmit: async () => { /* só fecha */ }
   });
 }
