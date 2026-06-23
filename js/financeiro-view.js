@@ -1,3 +1,4 @@
+// BUILD: 1782244772 - forcar push
 // =====================================================================
 // Renderização da aba Financeiro com sub-tabs
 // =====================================================================
@@ -302,8 +303,4 @@ async function renderResumo(box) {
         }).join('')}
       </tbody>
     </table>
-    <div style="margin-top:14px;padding:10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;color:#1e40af">
-      💡 Receita extraída do SIENGE (parcelas com data_pagamento no mês). Despesas vêm do módulo local de despesas.
-    </div>
-  `;
-}
+    <div style="margin-top:14px;padding:10px;background:
