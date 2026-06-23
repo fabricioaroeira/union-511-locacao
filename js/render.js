@@ -1101,7 +1101,123 @@ async function abrirModalDocumentos(contratoId) {
     const tit = el('div', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', fontWeight: '600', margin: '0 0 8px' } }, 'Contrato e aditivos');
     body.appendChild(tit);
     arquivos.forEach(a => {
-      const titulo = a.categoria 
+      const titulo = a.categoria === 'aditivo' ? 'Aditivo' : (a.categoria === 'contrato_assinado' ? 'Contrato assinado' : (a.categoria || 'Arquivo'));
+      const sub = a.nome_original + ' · ' + (a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '');
+      body.appendChild(renderItem('📄', titulo, sub, '', a.storage_path));
+    });
+  }
+
+  // Seção 2: documentos da tabela documentos_contrato (seguros, certidões, AVCB)
+  if (documentos && documentos.length > 0) {
+    const tit = el('div', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', fontWeight: '600', margin: '14px 0 8px' } }, 'Seguros, certidões e demais documentos');
+    body.appendChild(tit);
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    documentos.forEach(d => {
+      const tipoLbl = (TIPOS_DOCUMENTO && TIPOS_DOCUMENTO[d.tipo]) || d.tipo;
+      const validade = d.data_validade ? new Date(d.data_validade).toLocaleDateString('pt-BR') : '?';
+      const numero = d.numero ? 'Nº ' + d.numero + ' · ' : '';
+      const sub = numero + 'vence ' + validade + (d.descricao ? ' · ' + d.descricao : '');
+      // badge de urgência
+      let badge = '';
+      if (d.data_validade) {
+        const dias = Math.floor((new Date(d.data_validade) - hoje) / 86400000);
+        let bg, color, lbl;
+        if (dias < 0) { bg='#fef2f2'; color='#7f1d1d'; lbl='vencido'; }
+        else if (dias <= 7) { bg='#fee2e2'; color='#b91c1c'; lbl=dias+'d'; }
+        else if (dias <= 30) { bg='#ffedd5'; color='#c2410c'; lbl=dias+'d'; }
+        else if (dias <= 60) { bg='#fef9c3'; color='#a16207'; lbl=dias+'d'; }
+        else { bg='#dcfce7'; color='#15803d'; lbl='OK'; }
+        badge = '<span style="background:' + bg + ';color:' + color + ';padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap;margin-right:8px">' + lbl + '</span>';
+      }
+      if (d.arquivo_url) {
+        body.appendChild(renderItem('📋', tipoLbl, sub, badge, d.arquivo_url));
+      } else {
+        // doc sem arquivo anexado
+        const row = el('div');
+        row.style.cssText = 'display:flex;gap:12px;align-items:center;padding:10px 12px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;margin-bottom:6px';
+        row.innerHTML =
+          '<span style="font-size:22px;opacity:0.5">📋</span>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-weight:600;color:var(--ink);font-size:13px">' + tipoLbl + '</div>' +
+            '<div style="font-size:11px;color:var(--ink-soft)">' + sub + '</div>' +
+          '</div>' +
+          badge +
+          '<span style="font-size:11px;color:#94a3b8;font-style:italic;white-space:nowrap">Sem arquivo</span>';
+        body.appendChild(row);
+      }
+    });
+  }
+
+  if ((!arquivos || arquivos.length === 0) && (!documentos || documentos.length === 0)) {
+    body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum documento cadastrado para este contrato ainda.<br><span style="font-size:12px">Use o botão ✏️ editar para adicionar.</span></div>';
+  }
+
+  abrirModal({
+    titulo: 'Documentos do contrato',
+    body,
+    submitLabel: 'Fechar',
+    onSubmit: async () => { /* só fecha */ }
+  });
+}
+
+
+// =====================================================================
+// Modal "Documentos da proposta" — lista arquivos para análise
+// =====================================================================
+async function abrirModalArquivosProposta(propostaId) {
+  const arquivos = await getArquivos('proposta', propostaId).catch(() => []);
+  const body = el('div');
+
+  const LABELS_CAT_PROP = {
+    documentos_pessoais: 'Documentos do proponente',
+    comprovante: 'Comprovantes',
+    fianca: 'Documentos garantia/fiador',
+    termo: 'Termos',
+    laudo: 'Laudos',
+    outro: 'Outros'
+  };
+
+  if (!arquivos || arquivos.length === 0) {
+    body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum documento anexado a esta proposta ainda.<br><span style="font-size:12px">Use o botão ✏️ Editar e a seção "Documentos para análise do proponente" para adicionar.</span></div>';
+  } else {
+    arquivos.forEach(a => {
+      const row = el('div');
+      row.style.cssText = 'display:flex;gap:12px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px';
+      const titulo = LABELS_CAT_PROP[a.categoria] || a.categoria || 'Documento';
+      const sub = (a.nome_original || '?') + (a.tamanho_bytes ? ' · ' + (a.tamanho_bytes/1024).toFixed(1) + ' KB' : '');
+      row.innerHTML =
+        '<span style="font-size:22px">📋</span>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:600;color:var(--ink);font-size:13px">' + titulo + '</div>' +
+          '<div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + sub + '</div>' +
+        '</div>' +
+        '<button class="btn outline sm" data-baixar-prop style="font-size:11px;padding:5px 10px;white-space:nowrap">📎 Baixar</button>';
+      row.querySelector('[data-baixar-prop]').addEventListener('click', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        b.textContent = '...';
+        try {
+          const url = await getArquivoUrl(a.storage_path);
+          if (url) window.open(url, '_blank');
+          else mostrarToast('Arquivo não encontrado', 'error');
+        } catch (err) {
+          mostrarToast('Erro: ' + err.message, 'error');
+        } finally {
+          b.disabled = false;
+          b.textContent = '📎 Baixar';
+        }
+      });
+      body.appendChild(row);
+    });
+  }
+
+  abrirModal({
+    titulo: 'Documentos da proposta',
+    body,
+    submitLabel: 'Fechar',
+    onSubmit: async () => { /* só fecha */ }
+  });
+}
 
 // =====================================================================
 // Acompanhamento de locação — tabela densa de 52 lojas em 3 colunas
