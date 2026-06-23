@@ -168,11 +168,13 @@ function montarFicha(contrato, dados) {
   const tabBar = el('div', { className: 'ficha-tabs' });
   const totalAnexos = (dados.anexos || []).length;
   const qtdSienge = (dados.siengeParcelas || []).length;
+  const qtdReaj = (dados.reajustes || []).length;
   const tabs = [
     { id: 'resumo',    label: '📊 Resumo' },
     { id: 'dados',     label: '📝 Dados do contrato' },
+    { id: 'reajustes', label: '📜 Reajustes' + (qtdReaj ? ' (' + qtdReaj + ')' : '') },
     { id: 'anexos',    label: '📄 Anexos (' + totalAnexos + ')' },
-    { id: 'sienge',    label: '💰 SIENGE' + (qtdSienge ? ' (' + qtdSienge + ')' : '') },
+    { id: 'sienge',    label: '💰 Financeiro' + (qtdSienge ? ' (' + qtdSienge + ')' : '') },
     { id: 'gestoes',   label: '🤖 Gestões (' + dados.gestoes.filter(g => g.ativo).length + ')' },
     { id: 'historico', label: '🕐 Histórico (' + dados.historico.length + ')' }
   ];
@@ -230,25 +232,29 @@ function montarHeader(c, dados) {
       <div>${statusBadge}</div>
     </div>
     <div class="ficha-kpis">
-      <div class="ficha-kpi">
-        <div class="ficha-kpi-label">Aluguel mensal</div>
+      <div class="ficha-kpi" style="background:#E6F1FB">
+        <div class="ficha-kpi-label" style="color:#185FA5">Cobrança deste mês</div>
         ${(() => {
-          // Se tem SIENGE com valor do mês, usa esse. Senão, usa valor_aluguel do contrato.
           const saldo = dados.saldoSienge;
           const valorMes = saldo && saldo.tem_sienge && Number(saldo.valor_mes_atual) > 0
             ? Number(saldo.valor_mes_atual)
             : null;
           if (valorMes != null) {
-            return `<div class="ficha-kpi-valor">${formatMoney(valorMes)}
-              <span style="display:inline-block;padding:1px 6px;background:#dcfce7;color:#15803d;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;vertical-align:middle">SIENGE</span>
-            </div>
-            <div class="ficha-kpi-extra">vence dia ${String(c.dia_vencimento).padStart(2,'0')} · mês corrente</div>`;
+            return `<div class="ficha-kpi-valor" style="color:#0C447C">${formatMoney(valorMes)}</div>
+              <div class="ficha-kpi-extra" style="color:#185FA5">Aluguel + Cond + IPTU · vence dia ${String(c.dia_vencimento).padStart(2,'0')}</div>`;
           }
-          return `<div class="ficha-kpi-valor">${formatMoney(c.valor_aluguel)}
-            <span style="display:inline-block;padding:1px 6px;background:#fef3c7;color:#b45309;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;vertical-align:middle">estimado</span>
-          </div>
-          <div class="ficha-kpi-extra">vence dia ${String(c.dia_vencimento).padStart(2,'0')}</div>`;
+          return `<div class="ficha-kpi-valor" style="color:var(--ink-soft);font-size:14px">Sem dados SIENGE</div>
+            <div class="ficha-kpi-extra" style="color:#185FA5">Importe o PDF na aba Financeiro</div>`;
         })()}
+      </div>
+      <div class="ficha-kpi" style="background:#FAEEDA">
+        <div class="ficha-kpi-label" style="color:#854F0B">Aluguel contratual</div>
+        <div class="ficha-kpi-valor" style="color:#633806">${formatMoney(c.valor_base || c.valor_aluguel)}</div>
+        <div class="ficha-kpi-extra" style="color:#854F0B">${
+          c.valor_base && Number(c.valor_base) !== Number(c.valor_aluguel)
+            ? 'base · vigente R$ ' + Number(c.valor_aluguel).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+            : 'base · sem reajustes'
+        }</div>
       </div>
       <div class="ficha-kpi">
         <div class="ficha-kpi-label">Vigência</div>
@@ -277,6 +283,8 @@ function renderConteudoAba(container, aba, contrato, dados) {
     container.appendChild(renderResumo(contrato, dados));
   } else if (aba === 'dados') {
     container.appendChild(renderAbaDados(contrato));
+  } else if (aba === 'reajustes') {
+    container.appendChild(montarBlocoReajustes(contrato, dados.reajustes || []));
   } else if (aba === 'anexos') {
     container.appendChild(renderListaAnexos(dados.anexos, contrato.id));
   } else if (aba === 'sienge') {
@@ -300,18 +308,13 @@ function renderResumo(c, dados) {
     return d != null && d < 0;
   }).length;
 
-  // Bloco 1: condições principais
+  // Bloco 1: condições do contrato (PAPEL — só dados contratuais imutáveis)
+  // Cobrança real e reajustes lançados ficam em abas próprias (Financeiro + Reajustes)
   const bloco1 = el('div', { className: 'resumo-bloco' });
-  const temReajuste = c.valor_base != null && Number(c.valor_base) !== Number(c.valor_aluguel);
-  const linhaAluguel = temReajuste
-    ? `<div><strong>Aluguel vigente:</strong> <span style="color:#15803d;font-weight:700">${formatMoney(c.valor_aluguel)}</span>/mês</div>
-       <div><strong>Valor base do contrato:</strong> <span style="color:var(--ink-soft)">${formatMoney(c.valor_base)}</span> <em style="font-size:11px;color:#94a3b8">(desde ${escapeHtml(c.data_inicio || '—')})</em></div>`
-    : `<div><strong>Aluguel:</strong> ${formatMoney(c.valor_aluguel)}/mês <em style="font-size:11px;color:#94a3b8">(sem reajustes lançados)</em></div>
-       <div></div>`;
   bloco1.innerHTML = `
-    <h3>📋 Condições do contrato</h3>
+    <h3>📋 Condições contratuais <span style="font-size:11px;color:#94a3b8;font-weight:400">(do papel)</span></h3>
     <div class="resumo-grid">
-      ${linhaAluguel}
+      <div><strong>Aluguel base:</strong> ${formatMoney(c.valor_base || c.valor_aluguel)}/mês</div>
       <div><strong>Dia vencimento:</strong> ${String(c.dia_vencimento).padStart(2,'0')}</div>
       <div><strong>Carência:</strong> ${c.meses_carencia || 0} meses</div>
       <div><strong>Prazo:</strong> ${c.prazo_meses} meses (${(c.prazo_meses/12).toFixed(1)} anos)</div>
@@ -322,6 +325,9 @@ function renderResumo(c, dados) {
     </div>
     ${c.detalhes_garantia ? '<div class="resumo-obs"><strong>Detalhes da garantia:</strong><br>' + escapeHtml(c.detalhes_garantia) + '</div>' : ''}
     ${c.observacoes ? '<div class="resumo-obs"><strong>Observações:</strong><br>' + escapeHtml(c.observacoes) + '</div>' : ''}
+    <div style="margin-top:10px;padding:8px 10px;background:#f0f9ff;border-left:3px solid #0369a1;border-radius:4px;font-size:11px;color:#0c4a6e">
+      💡 <strong>Cobranças reais</strong> (do mês) na aba <strong>💰 Financeiro</strong>. <strong>Reajustes lançados</strong> na aba <strong>📜 Reajustes</strong>.
+    </div>
   `;
   div.appendChild(bloco1);
 
@@ -371,8 +377,7 @@ function renderResumo(c, dados) {
   `;
   div.appendChild(bloco2);
 
-  // Bloco extra: histórico de reajustes (valor base + reajustes lançados)
-  div.appendChild(montarBlocoReajustes(c, dados.reajustes || []));
+  // Histórico de reajustes — movido pra aba própria "📜 Reajustes"
 
   // Bloco 3: Cláusulas-chave do contrato (lidas pela IA)
   div.appendChild(montarBlocoClausulas(c));

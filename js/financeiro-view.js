@@ -22,6 +22,9 @@ export function setFinMes(mes) { _mesAtual = mes; renderFinanceiro(); }
 export async function renderFinanceiro() {
   const box = document.getElementById('fin-conteudo');
   if (!box) return;
+  // Sincroniza _mesAtual com o input visual (corrige drift entre input.value e variável)
+  const inp = document.getElementById('financeiro-mes');
+  if (inp && inp.value && inp.value !== _mesAtual) _mesAtual = inp.value;
   box.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft)">Carregando...</div>';
 
   await atualizarStatusAtrasadas().catch(() => {});
