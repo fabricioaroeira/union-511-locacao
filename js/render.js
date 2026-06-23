@@ -59,6 +59,7 @@ export async function renderTudo() {
   safe(() => renderMix(contratos, inquilinos), 'renderMix');
   try { await renderTabelaOcupadas(contratos, lojas, receitaConsol); } catch (e) { console.error('render err renderTabelaOcupadas:', e); }
   safe(() => renderTabelaDisponiveis(lojas, propostas), 'renderTabelaDisponiveis');
+  safe(() => renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos), 'renderAcompanhamentoLocacao');
   safe(() => renderInquilinosCards(inquilinos, contratos), 'renderInquilinosCards');
   safe(() => renderPropostas(propostasFiltro, filtroProp, propostasAtivas), 'renderPropostas');
   safe(() => renderLeads(leads), 'renderLeads');
@@ -1100,104 +1101,104 @@ async function abrirModalDocumentos(contratoId) {
     const tit = el('div', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', fontWeight: '600', margin: '0 0 8px' } }, 'Contrato e aditivos');
     body.appendChild(tit);
     arquivos.forEach(a => {
-      const titulo = a.categoria === 'aditivo' ? 'Aditivo' : (a.categoria === 'contrato_assinado' ? 'Contrato assinado' : (a.categoria || 'Arquivo'));
-      const sub = a.nome_original + ' · ' + (a.tamanho_bytes ? (a.tamanho_bytes / 1024).toFixed(1) + ' KB' : '');
-      body.appendChild(renderItem('📄', titulo, sub, '', a.storage_path));
-    });
+      const titulo = a.categoria 
+
+// =====================================================================
+// Acompanhamento de locação — tabela densa de 52 lojas em 3 colunas
+// =====================================================================
+function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
+  const cont = document.getElementById('acomp-tabelas');
+  if (!cont) return;
+  const resumoEl = document.getElementById('acomp-resumo');
+  const legendaEl = document.getElementById('acomp-legenda');
+
+  // Mapa loja → contrato/proposta
+  const ctrPorLoja = {};
+  (contratos || []).forEach(c => (c.lojas || []).forEach(cod => { ctrPorLoja[cod] = c; }));
+  const propPorLoja = {};
+  (propostas || []).forEach(p => (p.lojas || []).forEach(cod => { if (!propPorLoja[cod]) propPorLoja[cod] = p; }));
+
+  // Conta por status
+  const ocupadas = lojas.filter(l => l.status === 'ocupada').length;
+  const disponiveis = lojas.filter(l => l.status === 'disponivel').length;
+  const internas = lojas.filter(l => l.status === 'uso_interno').length;
+  const propostaCount = lojas.filter(l => l.status === 'proposta_aceita' || l.status === 'proposta_analise').length;
+
+  if (resumoEl) resumoEl.textContent = ocupadas + ' locadas · ' + disponiveis + ' disponíveis · ' + internas + ' internas' + (propostaCount > 0 ? ' · ' + propostaCount + ' em proposta' : '');
+  if (legendaEl) {
+    legendaEl.innerHTML =
+      '<span><span style="display:inline-block;width:10px;height:10px;background:#A32D2D;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Locada</span>' +
+      '<span><span style="display:inline-block;width:10px;height:10px;background:#3B6D11;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Disponível</span>' +
+      '<span><span style="display:inline-block;width:10px;height:10px;background:#5F5E5A;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Uso interno</span>' +
+      '<span><span style="display:inline-block;width:10px;height:10px;background:#854F0B;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Em proposta</span>';
   }
 
-  // Seção 2: documentos da tabela documentos_contrato (seguros, certidões, AVCB)
-  if (documentos && documentos.length > 0) {
-    const tit = el('div', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', fontWeight: '600', margin: '14px 0 8px' } }, 'Seguros, certidões e demais documentos');
-    body.appendChild(tit);
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    documentos.forEach(d => {
-      const tipoLbl = (TIPOS_DOCUMENTO && TIPOS_DOCUMENTO[d.tipo]) || d.tipo;
-      const validade = d.data_validade ? new Date(d.data_validade).toLocaleDateString('pt-BR') : '?';
-      const numero = d.numero ? 'Nº ' + d.numero + ' · ' : '';
-      const sub = numero + 'vence ' + validade + (d.descricao ? ' · ' + d.descricao : '');
-      // badge de urgência
-      let badge = '';
-      if (d.data_validade) {
-        const dias = Math.floor((new Date(d.data_validade) - hoje) / 86400000);
-        let bg, color, lbl;
-        if (dias < 0) { bg='#fef2f2'; color='#7f1d1d'; lbl='vencido'; }
-        else if (dias <= 7) { bg='#fee2e2'; color='#b91c1c'; lbl=dias+'d'; }
-        else if (dias <= 30) { bg='#ffedd5'; color='#c2410c'; lbl=dias+'d'; }
-        else if (dias <= 60) { bg='#fef9c3'; color='#a16207'; lbl=dias+'d'; }
-        else { bg='#dcfce7'; color='#15803d'; lbl='OK'; }
-        badge = '<span style="background:' + bg + ';color:' + color + ';padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap;margin-right:8px">' + lbl + '</span>';
-      }
-      if (d.arquivo_url) {
-        body.appendChild(renderItem('📋', tipoLbl, sub, badge, d.arquivo_url));
+  const lojasOrd = [...lojas].sort((a, b) => Number(a.codigo) - Number(b.codigo));
+  const total = lojasOrd.length;
+  const tam = Math.ceil(total / 3);
+  const partes = [lojasOrd.slice(0, tam), lojasOrd.slice(tam, 2 * tam), lojasOrd.slice(2 * tam)];
+
+  cont.innerHTML = '';
+  partes.forEach(parte => {
+    const tabela = el('table');
+    tabela.style.cssText = 'width:100%;border-collapse:collapse;font-size:11px';
+    tabela.innerHTML =
+      '<thead><tr style="background:#f1f5f9">' +
+      '<th style="text-align:left;padding:5px 6px;font-weight:600">L</th>' +
+      '<th style="text-align:right;padding:5px 6px;font-weight:600">m²</th>' +
+      '<th style="text-align:right;padding:5px 6px;font-weight:600">R$/mês</th>' +
+      '<th style="text-align:right;padding:5px 6px;font-weight:600">R$/m²</th>' +
+      '<th style="text-align:left;padding:5px 6px;font-weight:600">Inquilino</th>' +
+      '</tr></thead>';
+    const tbody = el('tbody');
+    parte.forEach(l => {
+      const c = ctrPorLoja[l.codigo];
+      const p = !c ? propPorLoja[l.codigo] : null;
+      const area = l.area_privativa ? Number(l.area_privativa) : 0;
+      let cor, bg, valorMes, valorM2, nome;
+      if (l.uso_interno || l.status === 'uso_interno') {
+        cor = '#5F5E5A'; bg = '#F1EFE8';
+        valorMes = '—'; valorM2 = '—'; nome = 'JAX 28 (interno)';
+      } else if (c) {
+        cor = '#A32D2D'; bg = '';
+        const v = Number(c.valor_aluguel || 0);
+        // Distribui valor proporcionalmente quando contrato tem várias lojas
+        const lojasCt = (c.lojas || []).length;
+        const valorLoja = lojasCt > 1 ? v / lojasCt : v;
+        valorMes = v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+        valorM2 = area > 0 ? (valorLoja / area).toFixed(0) : '—';
+        nome = c.nome_fantasia || c.razao_social || '?';
+      } else if (p) {
+        cor = '#854F0B'; bg = '';
+        const v = Number(p.valor_aluguel || 0);
+        valorMes = v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+        const areaTotal = Number(p.area_total) || area;
+        valorM2 = areaTotal > 0 ? (v / areaTotal).toFixed(0) : '—';
+        nome = '⏳ ' + (p.cliente_nome || 'proposta');
       } else {
-        // doc sem arquivo anexado
-        const row = el('div');
-        row.style.cssText = 'display:flex;gap:12px;align-items:center;padding:10px 12px;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;margin-bottom:6px';
-        row.innerHTML =
-          '<span style="font-size:22px;opacity:0.5">📋</span>' +
-          '<div style="flex:1;min-width:0">' +
-            '<div style="font-weight:600;color:var(--ink);font-size:13px">' + tipoLbl + '</div>' +
-            '<div style="font-size:11px;color:var(--ink-soft)">' + sub + '</div>' +
-          '</div>' +
-          badge +
-          '<span style="font-size:11px;color:#94a3b8;font-style:italic;white-space:nowrap">Sem arquivo</span>';
-        body.appendChild(row);
+        cor = '#3B6D11'; bg = '';
+        valorMes = '—'; valorM2 = '—'; nome = 'Disponível';
       }
+      const tr = el('tr');
+      tr.style.cssText = 'border-bottom:0.5px solid #f1f5f9;cursor:' + (c ? 'pointer' : 'default') + ';' + (bg ? 'background:' + bg : '');
+      tr.innerHTML =
+        '<td style="padding:4px 6px"><strong>' + l.codigo + '</strong></td>' +
+        '<td style="text-align:right;padding:4px 6px">' + (area > 0 ? area.toFixed(1) : '—') + '</td>' +
+        '<td style="text-align:right;padding:4px 6px;color:' + cor + '">' + valorMes + '</td>' +
+        '<td style="text-align:right;padding:4px 6px;color:#94a3b8">' + valorM2 + '</td>' +
+        '<td style="padding:4px 6px;color:' + cor + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="' + nome.replace(/"/g, '&quot;') + '">' + nome + '</td>';
+      if (c) {
+        tr.addEventListener('mouseenter', () => { tr.style.background = '#f8fafc'; });
+        tr.addEventListener('mouseleave', () => { tr.style.background = bg || ''; });
+        tr.addEventListener('click', () => abrirFichaLoja(c.id));
+      }
+      tbody.appendChild(tr);
     });
-  }
-
-  if ((!arquivos || arquivos.length === 0) && (!documentos || documentos.length === 0)) {
-    body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum documento cadastrado para este contrato ainda.<br><span style="font-size:12px">Use o botão ✏️ editar para adicionar.</span></div>';
-  }
-
-  abrirModal({
-    titulo: 'Documentos do contrato',
-    body,
-    submitLabel: 'Fechar',
-    onSubmit: async () => { /* só fecha */ }
+    tabela.appendChild(tbody);
+    cont.appendChild(tabela);
   });
 }
-
-
-// =====================================================================
-// Modal "Documentos da proposta" — lista arquivos para análise
-// =====================================================================
-async function abrirModalArquivosProposta(propostaId) {
-  const arquivos = await getArquivos('proposta', propostaId).catch(() => []);
-  const body = el('div');
-
-  const LABELS_CAT_PROP = {
-    documentos_pessoais: 'Documentos do proponente',
-    comprovante: 'Comprovantes',
-    fianca: 'Documentos garantia/fiador',
-    termo: 'Termos',
-    laudo: 'Laudos',
-    outro: 'Outros'
-  };
-
-  if (!arquivos || arquivos.length === 0) {
-    body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">Nenhum documento anexado a esta proposta ainda.<br><span style="font-size:12px">Use o botão ✏️ Editar e a seção "Documentos para análise do proponente" para adicionar.</span></div>';
-  } else {
-    arquivos.forEach(a => {
-      const row = el('div');
-      row.style.cssText = 'display:flex;gap:12px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:6px;margin-bottom:6px';
-      const titulo = LABELS_CAT_PROP[a.categoria] || a.categoria || 'Documento';
-      const sub = (a.nome_original || '?') + (a.tamanho_bytes ? ' · ' + (a.tamanho_bytes/1024).toFixed(1) + ' KB' : '');
-      row.innerHTML =
-        '<span style="font-size:22px">📋</span>' +
-        '<div style="flex:1;min-width:0">' +
-          '<div style="font-weight:600;color:var(--ink);font-size:13px">' + titulo + '</div>' +
-          '<div style="font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + sub + '</div>' +
-        '</div>' +
-        '<button class="btn outline sm" data-baixar-prop style="font-size:11px;padding:5px 10px;white-space:nowrap">📎 Baixar</button>';
-      row.querySelector('[data-baixar-prop]').addEventListener('click', async (e) => {
-        const b = e.currentTarget;
-        b.disabled = true;
-        b.textContent = '...';
-        try {
-          const url = await getArquivoUrl(a.storage_path);
-          if (url) window.open(url, '_blank');
+nk');
           else mostrarToast('Arquivo não encontrado', 'error');
         } catch (err) {
           mostrarToast('Erro: ' + err.message, 'error');
