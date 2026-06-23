@@ -1323,10 +1323,21 @@ export async function importarSiengePDF(contratoId, pdfFile) {
     };
   });
 
-  // 4) Upsert (idempotente pela unique index contrato+codigo+parcela_num+venc)
+  // 4) Desduplica dentro do array (mesma chave única não pode aparecer 2x no mesmo upsert)
+  // Chave: contrato_id + sienge_codigo + parcela_num + data_vencimento
+  const dedupMap = new Map();
+  let duplicados = 0;
+  for (const item of payload) {
+    const chave = [item.contrato_id, item.sienge_codigo, item.parcela_num ?? 'NULL', item.data_vencimento].join('|');
+    if (dedupMap.has(chave)) duplicados++;
+    dedupMap.set(chave, item); // último vence (mantém o mais recente em caso de conflito)
+  }
+  const payloadDedup = Array.from(dedupMap.values());
+
+  // 5) Upsert (idempotente pela unique index contrato+codigo+parcela_num+venc)
   const supa = await getSupabase();
   const { data, error } = await supa.from('sienge_parcelas')
-    .upsert(payload, { onConflict: 'contrato_id,sienge_codigo,parcela_num,data_vencimento', ignoreDuplicates: false })
+    .upsert(payloadDedup, { onConflict: 'contrato_id,sienge_codigo,parcela_num,data_vencimento', ignoreDuplicates: false })
     .select();
   if (error) throw new Error('Erro ao salvar parcelas: ' + error.message);
 
@@ -1334,6 +1345,7 @@ export async function importarSiengePDF(contratoId, pdfFile) {
     meta: extraido?.meta || null,
     totais: extraido?.totais || null,
     importadas: data?.length || 0,
-    total_extraidas: parcelas.length
+    total_extraidas: parcelas.length,
+    duplicados_descartados: duplicados
   };
 }
