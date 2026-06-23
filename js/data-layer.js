@@ -1232,28 +1232,32 @@ export async function excluirUsuario(userId) {
  * Retorna: { total_sienge, total_estimado, total_geral, contratos: [{id, nome, valor, origem}] }
  */
 export async function getReceitaConsolidadaPortfolio() {
-  if (MOCK_MODE) return { total_sienge: 0, total_estimado: 0, total_geral: 0, contratos: [] };
+  if (MOCK_MODE) return { total_sienge: 0, total_estimado: 0, total_geral: 0, total_contratual: 0, contratos: [] };
   const supa = await getSupabase();
   const [contratos, saldos] = await Promise.all([
-    supa.from('v_contratos_completo').select('id, nome_fantasia, razao_social, valor_aluguel').eq('status', 'ativo'),
+    supa.from('v_contratos_completo').select('id, nome_fantasia, razao_social, valor_aluguel, valor_base').eq('status', 'ativo'),
     supa.from('v_saldo_sienge_por_contrato').select('contrato_id, tem_sienge, valor_mes_atual')
   ]);
   const saldoMap = {};
   (saldos.data || []).forEach(s => { saldoMap[s.contrato_id] = s; });
 
-  let total_sienge = 0, total_estimado = 0;
+  let total_sienge = 0, total_estimado = 0, total_contratual = 0;
   const detalhes = (contratos.data || []).map(c => {
     const s = saldoMap[c.id];
     const tem = !!(s && s.tem_sienge);
     const valor = tem && Number(s.valor_mes_atual) > 0
       ? Number(s.valor_mes_atual)
       : Number(c.valor_aluguel || 0);
+    // Valor contratual = valor base do contrato (o que está cravado no papel)
+    const valorContratual = Number(c.valor_base || c.valor_aluguel || 0);
+    total_contratual += valorContratual;
     if (tem && Number(s.valor_mes_atual) > 0) total_sienge += valor;
     else total_estimado += valor;
     return {
       id: c.id,
       nome: c.nome_fantasia || c.razao_social,
       valor,
+      valor_contratual: valorContratual,
       origem: (tem && Number(s.valor_mes_atual) > 0) ? 'sienge' : 'estimado'
     };
   });
@@ -1261,6 +1265,7 @@ export async function getReceitaConsolidadaPortfolio() {
     total_sienge,
     total_estimado,
     total_geral: total_sienge + total_estimado,
+    total_contratual,
     contratos: detalhes
   };
 }

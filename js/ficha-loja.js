@@ -236,15 +236,22 @@ function montarHeader(c, dados) {
         <div class="ficha-kpi-label" style="color:#185FA5">Cobrança deste mês</div>
         ${(() => {
           const saldo = dados.saldoSienge;
-          const valorMes = saldo && saldo.tem_sienge && Number(saldo.valor_mes_atual) > 0
-            ? Number(saldo.valor_mes_atual)
-            : null;
-          if (valorMes != null) {
+          if (!saldo || !saldo.tem_sienge) {
+            return `<div class="ficha-kpi-valor" style="color:var(--ink-soft);font-size:14px">Sem dados SIENGE</div>
+              <div class="ficha-kpi-extra" style="color:#185FA5">Importe o PDF na aba Financeiro</div>`;
+          }
+          const valorMes = Number(saldo.valor_mes_atual || 0);
+          if (valorMes > 0) {
             return `<div class="ficha-kpi-valor" style="color:#0C447C">${formatMoney(valorMes)}</div>
               <div class="ficha-kpi-extra" style="color:#185FA5">Aluguel + Cond + IPTU · vence dia ${String(c.dia_vencimento).padStart(2,'0')}</div>`;
           }
-          return `<div class="ficha-kpi-valor" style="color:var(--ink-soft);font-size:14px">Sem dados SIENGE</div>
-            <div class="ficha-kpi-extra" style="color:#185FA5">Importe o PDF na aba Financeiro</div>`;
+          // Tem SIENGE mas valor=0 → em carência ou sem parcela no mês
+          const prox = saldo.proxima_parcela;
+          const proxTxt = prox && prox.valor && prox.data
+            ? `próx ${new Date(prox.data + 'T00:00:00').toLocaleDateString('pt-BR')} · ${formatMoney(prox.valor)}`
+            : 'sem próxima parcela cadastrada';
+          return `<div class="ficha-kpi-valor" style="color:#0C447C">R$ 0,00</div>
+            <div class="ficha-kpi-extra" style="color:#185FA5">Sem cobrança este mês · ${proxTxt}</div>`;
         })()}
       </div>
       <div class="ficha-kpi" style="background:#FAEEDA">

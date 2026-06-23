@@ -86,19 +86,17 @@ function renderKpis(k, receitaConsol) {
   const disp = k.lojas_locaveis - k.lojas_ocupadas;
   const pctOcup = (k.lojas_ocupadas / k.lojas_locaveis * 100);
   const pctDisp = (disp / k.lojas_locaveis * 100);
-  // Receita: prioriza valor consolidado SIENGE quando disponível
-  let receitaValor = k.receita_cheia_mes;
-  let receitaSub = 'Inclui CTO Evolve';
-  if (receitaConsol && receitaConsol.total_geral > 0) {
-    receitaValor = receitaConsol.total_geral;
-    const ctrsSienge = receitaConsol.contratos.filter(c => c.origem === 'sienge').length;
-    const ctrsEstimado = receitaConsol.contratos.filter(c => c.origem === 'estimado').length;
-    if (ctrsEstimado === 0) {
-      receitaSub = `<span style="color:#15803d">🟢 SIENGE</span> · ${ctrsSienge} contratos`;
-    } else {
-      receitaSub = `<span style="color:#15803d">🟢 ${ctrsSienge} SIENGE</span> + <span style="color:#b45309">🟡 ${ctrsEstimado} estimados</span>`;
-    }
-  }
+  // 2 KPIs separados: cobrança real (SIENGE+estimado do mês) vs contratual (papel)
+  const receitaReal = receitaConsol?.total_geral || k.receita_cheia_mes || 0;
+  const receitaContratual = receitaConsol?.total_contratual || k.receita_cheia_mes || 0;
+  const ctrsSienge = receitaConsol?.contratos.filter(c => c.origem === 'sienge').length || 0;
+  const ctrsEstimado = receitaConsol?.contratos.filter(c => c.origem === 'estimado').length || 0;
+  const diff = receitaReal - receitaContratual;
+  const diffPct = receitaContratual > 0 ? (diff / receitaContratual * 100) : 0;
+  const diffTxt = diff === 0
+    ? 'igual à cobrança real'
+    : (diff > 0 ? `+${formatMoneyShort(diff)} (${diffPct.toFixed(1)}%)` : `−${formatMoneyShort(Math.abs(diff))} (${diffPct.toFixed(1)}%)`);
+
   document.getElementById('kpis').innerHTML = `
     <div class="kpi accent">
       <div class="kpi-label">Lojas totais</div>
@@ -120,10 +118,15 @@ function renderKpis(k, receitaConsol) {
       <div class="kpi-value">${k.inquilinos_ativos}</div>
       <div class="kpi-sub">Mix diversificado</div>
     </div>
-    <div class="kpi">
-      <div class="kpi-label">Receita cheia/mês</div>
-      <div class="kpi-value">${formatMoneyShort(receitaValor)}</div>
-      <div class="kpi-sub">${receitaSub}</div>
+    <div class="kpi" style="background:#E6F1FB">
+      <div class="kpi-label" style="color:#185FA5">Cobrança real (mês)</div>
+      <div class="kpi-value" style="color:#0C447C">${formatMoneyShort(receitaReal)}</div>
+      <div class="kpi-sub" style="color:#185FA5">${ctrsEstimado === 0 ? `🟢 SIENGE · ${ctrsSienge} contratos` : `🟢 ${ctrsSienge} SIENGE + 🟡 ${ctrsEstimado} estimados`}</div>
+    </div>
+    <div class="kpi" style="background:#FAEEDA">
+      <div class="kpi-label" style="color:#854F0B">Aluguel contratual</div>
+      <div class="kpi-value" style="color:#633806">${formatMoneyShort(receitaContratual)}</div>
+      <div class="kpi-sub" style="color:#854F0B">base · ${diffTxt}</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Vagas comerciais</div>
