@@ -193,7 +193,8 @@
         <input type="month" id="financeiro-mes" style="padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px">
         <button class="btn outline" id="btn-financeiro-mes-anterior">‹</button>
         <button class="btn outline" id="btn-financeiro-mes-proximo">›</button>
-        <button class="btn" id="btn-financeiro-gerar">⚙ Gerar cobranças do mês</button>
+        <!-- Botão "Gerar cobranças do mês" removido: SIENGE é fonte oficial; cobranças vêm do PDF importado pela ficha do contrato -->
+        <span style="font-size:11px;color:#94a3b8;font-style:italic">Cobranças vêm do SIENGE — reimporte o PDF pra atualizar status</span>
       </div>
     </div>
     <div class="financeiro-subtabs" id="financeiro-subtabs">
@@ -444,14 +445,8 @@ document.getElementById('btn-financeiro-mes-proximo')?.addEventListener('click',
   inpMes.value = d.toISOString().slice(0, 7);
   setFinMes(inpMes.value);
 });
-document.getElementById('btn-financeiro-gerar')?.addEventListener('click', async () => {
-  try {
-    const { gerarCobrancasDoMes } = await import('./js/data-layer.js');
-    const r = await gerarCobrancasDoMes(inpMes.value + '-01');
-    mostrarToast(`${r.qtd} cobrança(s) criada(s)`);
-    renderFinanceiro();
-  } catch (e) { mostrarToast('Erro: ' + e.message, 'error'); }
-});
+// Botão "Gerar cobranças do mês" foi REMOVIDO — SIENGE é fonte oficial das cobranças.
+// O handler foi deixado neutro pra evitar erro caso algum elemento legado dispare o evento.
 
 // 5. Botoes CRUD
 document.getElementById('btn-novo-contrato').addEventListener('click', () => abrirFormContrato());
