@@ -30,8 +30,16 @@ async function callExtract(mode, pdfFile, label) {
   });
   if (!r.ok) {
     let msg = 'HTTP ' + r.status;
-    try { const j = await r.json(); msg = j.error || msg; } catch(_){}
-    throw new Error('Falha na ' + label + ': ' + msg);
+    let extra = '';
+    try {
+      const j = await r.json();
+      msg = j.error || msg;
+      // Diagnóstico extra (vem da nova versão da Edge Function)
+      if (j.stop_reason) extra += ' [stop=' + j.stop_reason + ']';
+      if (j.usage) extra += ' [in=' + j.usage.input_tokens + ', out=' + j.usage.output_tokens + ']';
+      if (j.raw_preview) { console.warn('[' + label + '] raw_preview:', j.raw_preview); extra += ' (raw no console)'; }
+    } catch(_){}
+    throw new Error('Falha na ' + label + ': ' + msg + extra);
   }
   const out = await r.json();
   if (!out.ok) throw new Error(out.error || 'Resposta inválida do proxy');
