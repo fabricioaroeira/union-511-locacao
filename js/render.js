@@ -1198,23 +1198,3 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
     cont.appendChild(tabela);
   });
 }
-nk');
-          else mostrarToast('Arquivo não encontrado', 'error');
-        } catch (err) {
-          mostrarToast('Erro: ' + err.message, 'error');
-        } finally {
-          b.disabled = false;
-          b.textContent = '📎 Baixar';
-        }
-      });
-      body.appendChild(row);
-    });
-  }
-
-  abrirModal({
-    titulo: 'Documentos da proposta',
-    body,
-    submitLabel: 'Fechar',
-    onSubmit: async () => { /* só fecha */ }
-  });
-}
