@@ -1,4 +1,4 @@
-const VERSION = 'v' + Date.now();
+const VERSION = 'v20260623a-rebuild-' + Date.now();
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => {
   e.waitUntil(
