@@ -1272,8 +1272,8 @@ export async function getReceitaConsolidadaPortfolio() {
 export async function getInadimplenciaSienge() {
   if (MOCK_MODE) return [];
   const supa = await getSupabase();
-  // Atualiza status primeiro (a_vencer → atrasada conforme data atual)
-  await supa.rpc('fn_recalcular_status_sienge').catch(() => {});
+  // Atualiza status primeiro (a_vencer → atrasada conforme data atual). Ignora erro se RPC não existir.
+  try { await supa.rpc('fn_recalcular_status_sienge'); } catch (_) {}
   const { data: parcs } = await supa.from('sienge_parcelas')
     .select('*')
     .eq('status', 'atrasada')
