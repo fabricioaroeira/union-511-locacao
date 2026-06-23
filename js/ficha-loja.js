@@ -232,8 +232,23 @@ function montarHeader(c, dados) {
     <div class="ficha-kpis">
       <div class="ficha-kpi">
         <div class="ficha-kpi-label">Aluguel mensal</div>
-        <div class="ficha-kpi-valor">${formatMoney(c.valor_aluguel)}</div>
-        <div class="ficha-kpi-extra">vence dia ${String(c.dia_vencimento).padStart(2,'0')}</div>
+        ${(() => {
+          // Se tem SIENGE com valor do mês, usa esse. Senão, usa valor_aluguel do contrato.
+          const saldo = dados.saldoSienge;
+          const valorMes = saldo && saldo.tem_sienge && Number(saldo.valor_mes_atual) > 0
+            ? Number(saldo.valor_mes_atual)
+            : null;
+          if (valorMes != null) {
+            return `<div class="ficha-kpi-valor">${formatMoney(valorMes)}
+              <span style="display:inline-block;padding:1px 6px;background:#dcfce7;color:#15803d;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;vertical-align:middle">SIENGE</span>
+            </div>
+            <div class="ficha-kpi-extra">vence dia ${String(c.dia_vencimento).padStart(2,'0')} · mês corrente</div>`;
+          }
+          return `<div class="ficha-kpi-valor">${formatMoney(c.valor_aluguel)}
+            <span style="display:inline-block;padding:1px 6px;background:#fef3c7;color:#b45309;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;vertical-align:middle">estimado</span>
+          </div>
+          <div class="ficha-kpi-extra">vence dia ${String(c.dia_vencimento).padStart(2,'0')}</div>`;
+        })()}
       </div>
       <div class="ficha-kpi">
         <div class="ficha-kpi-label">Vigência</div>

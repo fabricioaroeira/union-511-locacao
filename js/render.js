@@ -5,7 +5,8 @@ import {
   getKPIs, getLojasStatus, getInquilinos, getContratos, getPropostas, getArquivos, encerrarContrato, getLeads,
   getDocumentosByContrato, TIPOS_DOCUMENTO,
   getGestoesAtivas,
-  getOcorrenciasPendentesGlobal
+  getOcorrenciasPendentesGlobal,
+  getReceitaConsolidadaPortfolio, getInadimplenciaSienge
 } from './data-layer.js';
 import { getArquivoUrl } from './upload.js';
 import { abrirModal , promptCustom} from './modal.js';
@@ -37,25 +38,26 @@ export function mostrarToast(msg, tipo = 'success') {
 // ---------------------------------------------------------------------
 export async function renderTudo() {
   const filtroProp = getState('propostasFiltro');
-  const [kpis, lojas, inquilinos, contratos, propostasAtivas, propostasFiltro, leads, gestoes] = await Promise.all([
+  const [kpis, lojas, inquilinos, contratos, propostasAtivas, propostasFiltro, leads, gestoes, receitaConsol] = await Promise.all([
     getKPIs(), getLojasStatus(), getInquilinos(), getContratos('ativo'),
     getPropostas('ativas'),  // pra mapa, KPIs e legenda
     getPropostas(filtroProp), // pra aba propostas
     getLeads('todos').catch(() => []),
     // Tenta ocorrências (novo sistema); se tabela não existe ainda, cai pro antigo
     getOcorrenciasPendentesGlobal().then(o => o.length ? o : null).catch(() => null)
-      .then(o => o ?? getGestoesAtivas().catch(() => []))
+      .then(o => o ?? getGestoesAtivas().catch(() => [])),
+    getReceitaConsolidadaPortfolio().catch(() => null)  // SIENGE + fallback estimado
   ]);
   const propostas = propostasAtivas; // alias pra renders que usam propostas ativas
   const safe = (fn, nome) => { try { return fn(); } catch (e) { console.error('render error em ' + nome + ':', e); } };
   safe(() => renderBannerAlertas(contratos, propostas, leads, gestoes), 'renderBannerAlertas');
-  safe(() => renderKpis(kpis), 'renderKpis');
+  safe(() => renderKpis(kpis, receitaConsol), 'renderKpis');
   safe(() => renderFunilComercial(leads, propostas, contratos), 'renderFunilComercial');
   safe(() => renderPlanta(lojas, contratos, propostas), 'renderPlanta');
   safe(() => renderLegenda(kpis, propostas), 'renderLegenda');
   safe(() => renderOcupacao(kpis), 'renderOcupacao');
   safe(() => renderMix(contratos, inquilinos), 'renderMix');
-  try { await renderTabelaOcupadas(contratos, lojas); } catch (e) { console.error('render err renderTabelaOcupadas:', e); }
+  try { await renderTabelaOcupadas(contratos, lojas, receitaConsol); } catch (e) { console.error('render err renderTabelaOcupadas:', e); }
   safe(() => renderTabelaDisponiveis(lojas, propostas), 'renderTabelaDisponiveis');
   safe(() => renderInquilinosCards(inquilinos, contratos), 'renderInquilinosCards');
   safe(() => renderPropostas(propostasFiltro, filtroProp, propostasAtivas), 'renderPropostas');
@@ -80,10 +82,23 @@ function renderCounters(kpis, propostas, leads = []) {
 // ---------------------------------------------------------------------
 // KPIs
 // ---------------------------------------------------------------------
-function renderKpis(k) {
+function renderKpis(k, receitaConsol) {
   const disp = k.lojas_locaveis - k.lojas_ocupadas;
   const pctOcup = (k.lojas_ocupadas / k.lojas_locaveis * 100);
   const pctDisp = (disp / k.lojas_locaveis * 100);
+  // Receita: prioriza valor consolidado SIENGE quando disponível
+  let receitaValor = k.receita_cheia_mes;
+  let receitaSub = 'Inclui CTO Evolve';
+  if (receitaConsol && receitaConsol.total_geral > 0) {
+    receitaValor = receitaConsol.total_geral;
+    const ctrsSienge = receitaConsol.contratos.filter(c => c.origem === 'sienge').length;
+    const ctrsEstimado = receitaConsol.contratos.filter(c => c.origem === 'estimado').length;
+    if (ctrsEstimado === 0) {
+      receitaSub = `<span style="color:#15803d">🟢 SIENGE</span> · ${ctrsSienge} contratos`;
+    } else {
+      receitaSub = `<span style="color:#15803d">🟢 ${ctrsSienge} SIENGE</span> + <span style="color:#b45309">🟡 ${ctrsEstimado} estimados</span>`;
+    }
+  }
   document.getElementById('kpis').innerHTML = `
     <div class="kpi accent">
       <div class="kpi-label">Lojas totais</div>
@@ -107,8 +122,8 @@ function renderKpis(k) {
     </div>
     <div class="kpi">
       <div class="kpi-label">Receita cheia/mês</div>
-      <div class="kpi-value">${formatMoneyShort(k.receita_cheia_mes)}</div>
-      <div class="kpi-sub">Inclui CTO Evolve</div>
+      <div class="kpi-value">${formatMoneyShort(receitaValor)}</div>
+      <div class="kpi-sub">${receitaSub}</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Vagas comerciais</div>
@@ -165,7 +180,7 @@ function renderMix(contratos, inquilinos) {
 // ---------------------------------------------------------------------
 // Tabela Ocupadas
 // ---------------------------------------------------------------------
-async function renderTabelaOcupadas(contratos, lojas) {
+async function renderTabelaOcupadas(contratos, lojas, receitaConsol) {
   // Se ficha de loja está aberta, ela já renderiza dentro do card — pula tabela
   if (getFichaLojaAtiva()) {
     abrirFichaLoja(getFichaLojaAtiva());
@@ -190,6 +205,12 @@ async function renderTabelaOcupadas(contratos, lojas) {
       getDocumentosByContrato(c.id).catch(() => [])
     ])
   ));
+
+  // Mapa contrato_id → { valor, origem } pra mostrar badge SIENGE/estimado
+  const receitaPorContrato = {};
+  if (receitaConsol && Array.isArray(receitaConsol.contratos)) {
+    receitaConsol.contratos.forEach(r => { receitaPorContrato[r.id] = r; });
+  }
 
   for (let i = 0; i < sorted.length; i++) {
     const c = sorted[i];
@@ -217,7 +238,15 @@ async function renderTabelaOcupadas(contratos, lojas) {
       </td>
       <td style="font-size:12px"><strong>${areaTotalPriv > 0 ? areaTotalPriv.toFixed(2).replace('.', ',') + ' m²' : '—'}</strong>${rsm ? '<br><span style="color:var(--ink-soft);font-size:11px">R$ ' + rsm.toFixed(2).replace('.',',') + '/m²</span>' : ''}${areaDetalhe}</td>
       <td>
-        <strong>${formatMoney(c.valor_aluguel)}</strong><br>
+        ${(() => {
+          const r = receitaPorContrato[c.id];
+          const valor = r ? r.valor : c.valor_aluguel;
+          const origem = r ? r.origem : 'estimado';
+          const badge = origem === 'sienge'
+            ? '<span style="display:inline-block;padding:1px 6px;background:#dcfce7;color:#15803d;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px">SIENGE</span>'
+            : '<span style="display:inline-block;padding:1px 6px;background:#fef3c7;color:#b45309;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px">estimado</span>';
+          return `<strong>${formatMoney(valor)}</strong>${badge}`;
+        })()}<br>
         <span style="font-size:11px;color:var(--ink-soft)">${c.meses_carencia}m carência</span>
       </td>
       <td>dia ${String(c.dia_vencimento).padStart(2,'0')}</td>
@@ -551,9 +580,50 @@ function renderTabelaVencimentos(contratos) {
 // ---------------------------------------------------------------------
 // Alertas
 // ---------------------------------------------------------------------
-function renderAlertas(propostas, contratos, gestoes = []) {
+async function renderAlertas(propostas, contratos, gestoes = []) {
   const list = document.getElementById('alertas-list');
   list.innerHTML = '';
+
+  // ============================================================
+  // SEÇÃO 0: INADIMPLÊNCIA SIENGE (parcelas atrasadas — fonte oficial)
+  // ============================================================
+  try {
+    const inadSienge = await getInadimplenciaSienge();
+    if (inadSienge && inadSienge.length > 0) {
+      const totalInad = inadSienge.reduce((s, p) => s + Number(p.valor_corrigido || 0), 0);
+      // Agrupa por contrato
+      const porContrato = {};
+      inadSienge.forEach(p => {
+        if (!porContrato[p.contrato_nome]) porContrato[p.contrato_nome] = [];
+        porContrato[p.contrato_nome].push(p);
+      });
+
+      const cabec = el('div');
+      cabec.style.cssText = 'margin:8px 0 14px;padding:12px 16px;background:linear-gradient(135deg,#fee2e2 0%,#fecaca 100%);border-left:4px solid #dc2626;border-radius:8px';
+      cabec.innerHTML =
+        '<div style="font-weight:700;color:#7f1d1d;font-size:14px">💸 Inadimplência (SIENGE — fonte oficial)</div>' +
+        '<div style="font-size:12px;color:#991b1b;margin-top:4px">' +
+          '<strong>' + inadSienge.length + ' parcela(s) atrasada(s)</strong> — total <strong>' + formatMoney(totalInad) + '</strong>' +
+        '</div>';
+      list.appendChild(cabec);
+
+      Object.entries(porContrato).forEach(([nome, parcs]) => {
+        const totContrato = parcs.reduce((s,p) => s + Number(p.valor_corrigido || 0), 0);
+        const div = el('div', { className: 'alert' });
+        div.style.cssText = 'border-left:3px solid #dc2626';
+        const linhasParcs = parcs.map(p => {
+          const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : '?';
+          const compLbl = { aluguel: 'Aluguel', condominio: 'Condomínio', iptu: 'IPTU', recibo: 'Recibo', outros: 'Outros' }[p.componente] || p.componente;
+          return `<li style="margin-bottom:3px">${compLbl} ${p.sienge_codigo || ''} ${p.parcela_rotulo || ''} · venc ${venc} · <strong>${formatMoney(p.valor_corrigido)}</strong> · <span style="color:#dc2626;font-weight:600">${p.dias_atraso || 0}d atraso</span></li>`;
+        }).join('');
+        div.innerHTML = `
+          <div class="alert-title">⚠️ ${escapeHtmlAlerta(nome)} — ${parcs.length} parcela(s) atrasada(s) · ${formatMoney(totContrato)}</div>
+          <div class="alert-body"><ul style="margin:6px 0 0;padding-left:20px;font-size:12px">${linhasParcs}</ul></div>
+        `;
+        list.appendChild(div);
+      });
+    }
+  } catch (err) { console.error('Erro inadimplência SIENGE:', err); }
 
   // ============================================================
   // SEÇÃO 1: GESTÕES DE CONTRATO (geradas pela IA)

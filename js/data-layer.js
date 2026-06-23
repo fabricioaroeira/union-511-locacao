@@ -1225,6 +1225,137 @@ export async function excluirUsuario(userId) {
 // =====================================================================
 
 /**
+ * Receita cheia/mês consolidada do PORTFÓLIO inteiro.
+ * Pra cada contrato ativo:
+ *   - Se tem SIENGE → usa valor_mes_atual (soma dos componentes do mês corrente)
+ *   - Se não tem SIENGE → usa valor_aluguel do contrato (fallback "estimado")
+ * Retorna: { total_sienge, total_estimado, total_geral, contratos: [{id, nome, valor, origem}] }
+ */
+export async function getReceitaConsolidadaPortfolio() {
+  if (MOCK_MODE) return { total_sienge: 0, total_estimado: 0, total_geral: 0, contratos: [] };
+  const supa = await getSupabase();
+  const [contratos, saldos] = await Promise.all([
+    supa.from('v_contratos_completo').select('id, nome_fantasia, razao_social, valor_aluguel').eq('status', 'ativo'),
+    supa.from('v_saldo_sienge_por_contrato').select('contrato_id, tem_sienge, valor_mes_atual')
+  ]);
+  const saldoMap = {};
+  (saldos.data || []).forEach(s => { saldoMap[s.contrato_id] = s; });
+
+  let total_sienge = 0, total_estimado = 0;
+  const detalhes = (contratos.data || []).map(c => {
+    const s = saldoMap[c.id];
+    const tem = !!(s && s.tem_sienge);
+    const valor = tem && Number(s.valor_mes_atual) > 0
+      ? Number(s.valor_mes_atual)
+      : Number(c.valor_aluguel || 0);
+    if (tem && Number(s.valor_mes_atual) > 0) total_sienge += valor;
+    else total_estimado += valor;
+    return {
+      id: c.id,
+      nome: c.nome_fantasia || c.razao_social,
+      valor,
+      origem: (tem && Number(s.valor_mes_atual) > 0) ? 'sienge' : 'estimado'
+    };
+  });
+  return {
+    total_sienge,
+    total_estimado,
+    total_geral: total_sienge + total_estimado,
+    contratos: detalhes
+  };
+}
+
+/**
+ * Lista parcelas SIENGE atrasadas de TODO O PORTFÓLIO (com dados do contrato).
+ * Retorna: array de { parcela, contrato_id, nome_fantasia, dias_atraso }
+ */
+export async function getInadimplenciaSienge() {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  // Atualiza status primeiro (a_vencer → atrasada conforme data atual)
+  await supa.rpc('fn_recalcular_status_sienge').catch(() => {});
+  const { data: parcs } = await supa.from('sienge_parcelas')
+    .select('*')
+    .eq('status', 'atrasada')
+    .order('data_vencimento');
+  if (!parcs || parcs.length === 0) return [];
+
+  const ids = [...new Set(parcs.map(p => p.contrato_id))];
+  const { data: ctrs } = await supa.from('v_contratos_completo').select('id, nome_fantasia, razao_social').in('id', ids);
+  const nome = Object.fromEntries((ctrs || []).map(c => [c.id, c.nome_fantasia || c.razao_social]));
+
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  return parcs.map(p => {
+    const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00') : null;
+    const dias_atraso = venc ? Math.floor((hoje - venc) / 86400000) : null;
+    return {
+      ...p,
+      contrato_nome: nome[p.contrato_id] || '?',
+      dias_atraso
+    };
+  });
+}
+
+/**
+ * Parcelas SIENGE do mês corrente (todas, agrupadas por contrato).
+ * Usado pela aba Financeiro pra montar "Cobranças do mês".
+ */
+export async function getCobrancasSiengeDoMes(yyyymm) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const mes = yyyymm || new Date().toISOString().slice(0,7);
+  const inicio = mes + '-01';
+  // Calcula último dia do mês
+  const [y, m] = mes.split('-').map(Number);
+  const ultimoDia = new Date(y, m, 0).getDate();
+  const fim = `${mes}-${String(ultimoDia).padStart(2,'0')}`;
+
+  const { data: parcs } = await supa.from('sienge_parcelas')
+    .select('*')
+    .gte('data_vencimento', inicio)
+    .lte('data_vencimento', fim)
+    .order('data_vencimento');
+  if (!parcs || parcs.length === 0) return [];
+
+  const ids = [...new Set(parcs.map(p => p.contrato_id))];
+  const { data: ctrs } = await supa.from('v_contratos_completo').select('id, nome_fantasia, razao_social').in('id', ids);
+  const nome = Object.fromEntries((ctrs || []).map(c => [c.id, c.nome_fantasia || c.razao_social]));
+  return parcs.map(p => ({ ...p, contrato_nome: nome[p.contrato_id] || '?' }));
+}
+
+/**
+ * DRE mensal via SIENGE: receita = soma valor_pago das parcelas pagas no mês; despesa continua local.
+ */
+export async function getDREMensalSienge(meses = 6) {
+  if (MOCK_MODE) return [];
+  const supa = await getSupabase();
+  const hoje = new Date();
+  const linhas = [];
+  for (let i = 0; i < meses; i++) {
+    const dt = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    const yyyymm = dt.toISOString().slice(0,7);
+    const inicio = yyyymm + '-01';
+    const [y, m] = yyyymm.split('-').map(Number);
+    const ultimoDia = new Date(y, m, 0).getDate();
+    const fim = `${yyyymm}-${String(ultimoDia).padStart(2,'0')}`;
+
+    const { data: pagas } = await supa.from('sienge_parcelas')
+      .select('valor_pago')
+      .eq('status', 'paga')
+      .gte('data_pagamento', inicio)
+      .lte('data_pagamento', fim);
+    const receita = (pagas || []).reduce((s, p) => s + Number(p.valor_pago || 0), 0);
+
+    const { data: desp } = await supa.from('despesas').select('valor_pago, valor').eq('status', 'paga')
+      .gte('data_pagamento', inicio).lte('data_pagamento', fim);
+    const despesa = (desp || []).reduce((s, d) => s + Number(d.valor_pago || d.valor || 0), 0);
+
+    linhas.push({ mes: inicio, receita_recebida: receita, despesa_paga: despesa, resultado_caixa: receita - despesa });
+  }
+  return linhas;
+}
+
+/**
  * Lista todas as parcelas SIENGE de um contrato, ordenadas por vencimento.
  */
 export async function getSiengeParcelas(contratoId) {

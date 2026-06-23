@@ -3,7 +3,8 @@
 // =====================================================================
 import {
   getCobrancas, getInadimplencia, getDespesas, getFornecedores,
-  getReajustes, getDREMensal, atualizarStatusAtrasadas, getContratos
+  getReajustes, getDREMensal, atualizarStatusAtrasadas, getContratos,
+  getCobrancasSiengeDoMes, getInadimplenciaSienge, getDREMensalSienge
 } from './data-layer.js';
 import {
   abrirFormPagamento, abrirFormDespesa, abrirFormPagamentoDespesa,
@@ -41,112 +42,103 @@ const STATUS_BADGE = {
 };
 
 async function renderCobrancas(box) {
-  const cobrancas = await getCobrancas({ mes: _mesAtual });
-  const inad = await getInadimplencia();
+  // SIENGE como fonte oficial: lista todas as parcelas do mês (todos os componentes: aluguel/cond/IPTU)
+  const parcelas = await getCobrancasSiengeDoMes(_mesAtual);
+  const inadSienge = await getInadimplenciaSienge();
   const elBadge = document.getElementById('fin-cnt-inad');
-  if (elBadge) elBadge.textContent = inad.length > 0 ? `(${inad.length})` : '';
+  if (elBadge) elBadge.textContent = inadSienge.length > 0 ? `(${inadSienge.length})` : '';
 
-  if (cobrancas.length === 0) {
+  if (parcelas.length === 0) {
     box.innerHTML = `
       <div style="padding:30px;text-align:center;color:var(--ink-soft);background:#f8fafc;border-radius:8px;border:1px dashed var(--line)">
-        Nenhuma cobrança em ${_mesAtual}. Clique em <strong>⚙ Gerar cobranças do mês</strong> pra criar.
+        Nenhuma parcela SIENGE em <strong>${_mesAtual}</strong>. Importe o "Saldo Devedor Presente" dos contratos na aba <strong>💰 SIENGE</strong> da ficha pra ver as cobranças aqui.
       </div>`;
     return;
   }
 
-  const totalCheio = cobrancas.reduce((s, c) => s + Number(c.valor_cheio || 0), 0);
-  const totalDesc = cobrancas.reduce((s, c) => s + Number(c.desconto_concedido || 0), 0);
-  const totalDev = cobrancas.reduce((s, c) => s + Number(c.valor_devido || 0), 0);
-  const totalPago = cobrancas.filter(c => c.status === 'paga').reduce((s, c) => s + Number(c.valor_pago || c.valor_devido || 0), 0);
+  const total = parcelas.reduce((s, p) => s + Number(p.valor_corrigido || 0), 0);
+  const totalPagas = parcelas.filter(p => p.status === 'paga').reduce((s, p) => s + Number(p.valor_pago || 0), 0);
+  const pendentes = parcelas.filter(p => p.status !== 'paga');
+  const totalPendente = pendentes.reduce((s, p) => s + Number(p.valor_corrigido || 0), 0);
+  const qtdAtrasadas = parcelas.filter(p => p.status === 'atrasada').length;
+
+  const compLbl = { aluguel: 'Aluguel', condominio: 'Condomínio', iptu: 'IPTU', recibo: 'Recibo', outros: 'Outros' };
 
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
-      <div class="kpi"><div class="kpi-label">Receita cheia</div><div class="kpi-value">${formatMoney(totalCheio)}</div></div>
-      <div class="kpi amber"><div class="kpi-label">Descontos concedidos</div><div class="kpi-value">${formatMoney(totalDesc)}</div></div>
-      <div class="kpi"><div class="kpi-label">A receber líquido</div><div class="kpi-value">${formatMoney(totalDev)}</div></div>
-      <div class="kpi green"><div class="kpi-label">Recebido</div><div class="kpi-value">${formatMoney(totalPago)}</div></div>
+      <div class="kpi"><div class="kpi-label">Total do mês (SIENGE)</div><div class="kpi-value">${formatMoney(total)}</div></div>
+      <div class="kpi green"><div class="kpi-label">Recebido</div><div class="kpi-value">${formatMoney(totalPagas)}</div></div>
+      <div class="kpi amber"><div class="kpi-label">A receber</div><div class="kpi-value">${formatMoney(totalPendente)}</div></div>
+      <div class="kpi" style="background:${qtdAtrasadas > 0 ? '#fee2e2' : '#f8fafc'}"><div class="kpi-label">Atrasadas</div><div class="kpi-value" style="color:${qtdAtrasadas > 0 ? '#991b1b' : 'var(--ink-soft)'}">${qtdAtrasadas}</div></div>
     </div>
     <table>
       <thead><tr>
-        <th>Inquilino</th><th>Lojas</th><th>Vencimento</th>
-        <th style="text-align:right">Cheio</th><th style="text-align:right">Desconto</th><th style="text-align:right">Devido</th>
-        <th>Status</th><th>Ações</th>
+        <th>Inquilino</th><th>Componente / Título</th><th>Vencimento</th>
+        <th style="text-align:right">Valor</th><th>Status</th><th>Pagamento</th>
       </tr></thead>
       <tbody>
-        ${cobrancas.map(c => {
-          const b = STATUS_BADGE[c.status] || STATUS_BADGE.pendente;
-          const nome = c.nome_fantasia || c.razao_social;
-          const lojas = Array.isArray(c.lojas) ? c.lojas.join(', ') : '—';
-          const vencFmt = fmtBR(c.vencimento);
-          const podeAcao = c.status !== 'paga' && c.status !== 'cancelada' && Number(c.valor_devido) > 0;
+        ${parcelas.map(p => {
+          const b = STATUS_BADGE[p.status] || STATUS_BADGE.pendente;
+          const vencFmt = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+          const pagFmt = p.data_pagamento ? new Date(p.data_pagamento + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
           return `<tr>
-            <td><strong>${nome}</strong></td>
-            <td style="font-size:12px">${lojas}</td>
-            <td>${vencFmt}${c.dias_atraso > 0 ? `<br><span style="color:#991b1b;font-size:11px">${c.dias_atraso} dia(s) atraso</span>` : ''}</td>
-            <td style="text-align:right">${formatMoney(c.valor_cheio)}</td>
-            <td style="text-align:right;color:${Number(c.desconto_concedido) > 0 ? '#854F0B' : 'var(--ink-soft)'}">${Number(c.desconto_concedido) > 0 ? '−' + formatMoney(c.desconto_concedido) : '—'}${c.desconto_descricao ? '<br><span style="font-size:10px;color:var(--ink-soft)">' + c.desconto_descricao + '</span>' : ''}</td>
-            <td style="text-align:right"><strong>${formatMoney(c.valor_devido)}</strong></td>
+            <td><strong>${p.contrato_nome || '—'}</strong></td>
+            <td style="font-size:12px"><span style="color:#15803d;font-weight:600">${compLbl[p.componente] || p.componente}</span><br><span style="color:#94a3b8;font-size:11px">${p.sienge_codigo || ''} ${p.parcela_rotulo ? '· ' + p.parcela_rotulo : ''}</span></td>
+            <td>${vencFmt}</td>
+            <td style="text-align:right"><strong>${formatMoney(p.valor_corrigido)}</strong></td>
             <td><span class="badge" style="background:${b.bg};color:${b.cor}">${b.txt}</span></td>
-            <td>${podeAcao ? `<button class="btn outline sm" data-pagar="${c.id}">✓ Pagar</button>` : ''}</td>
+            <td style="font-size:11px;color:var(--ink-soft)">${pagFmt}${p.valor_pago ? '<br>' + formatMoney(p.valor_pago) : ''}</td>
           </tr>`;
         }).join('')}
       </tbody>
     </table>
+    <div style="margin-top:14px;padding:10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;color:#1e40af">
+      💡 Fonte: SIENGE (Saldo Devedor Presente). Pra atualizar status de pagamentos, reimporte o PDF do contrato pela ficha → aba <strong>💰 SIENGE</strong>.
+    </div>
   `;
-  box.querySelectorAll('[data-pagar]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const c = cobrancas.find(x => x.id === btn.dataset.pagar);
-      if (c) abrirFormPagamento(c);
-    });
-  });
 }
 
 async function renderInadimplencia(box) {
-  const inad = await getInadimplencia();
+  const inad = await getInadimplenciaSienge();
   const elBadge = document.getElementById('fin-cnt-inad');
   if (elBadge) elBadge.textContent = inad.length > 0 ? `(${inad.length})` : '';
 
   if (inad.length === 0) {
-    box.innerHTML = `<div style="padding:30px;text-align:center;color:#166534;background:#dcfce7;border-radius:8px">✓ Nenhuma inadimplência. Todos os pagamentos em dia!</div>`;
+    box.innerHTML = `<div style="padding:30px;text-align:center;color:#166534;background:#dcfce7;border-radius:8px">✓ Nenhuma inadimplência. Todas as parcelas SIENGE em dia!</div>`;
     return;
   }
 
-  const totalDevido = inad.reduce((s, c) => s + Number(c.saldo_devedor || 0), 0);
-  const totalAtualizado = inad.reduce((s, c) => s + Number(c.total_atualizado || 0), 0);
+  const totalInad = inad.reduce((s, p) => s + Number(p.valor_corrigido || 0), 0);
+  const compLbl = { aluguel: 'Aluguel', condominio: 'Condomínio', iptu: 'IPTU', recibo: 'Recibo', outros: 'Outros' };
 
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-      <div class="kpi" style="background:#fee2e2"><div class="kpi-label">Cobranças em atraso</div><div class="kpi-value" style="color:#991b1b">${inad.length}</div></div>
-      <div class="kpi" style="background:#fee2e2"><div class="kpi-label">Saldo devedor original</div><div class="kpi-value" style="color:#991b1b">${formatMoney(totalDevido)}</div></div>
-      <div class="kpi" style="background:#fee2e2"><div class="kpi-label">Total atualizado (com multa+juros)</div><div class="kpi-value" style="color:#991b1b">${formatMoney(totalAtualizado)}</div></div>
+      <div class="kpi" style="background:#fee2e2"><div class="kpi-label">Parcelas atrasadas</div><div class="kpi-value" style="color:#991b1b">${inad.length}</div></div>
+      <div class="kpi" style="background:#fee2e2"><div class="kpi-label">Total a receber</div><div class="kpi-value" style="color:#991b1b">${formatMoney(totalInad)}</div></div>
+      <div class="kpi"><div class="kpi-label">Contratos afetados</div><div class="kpi-value">${new Set(inad.map(p => p.contrato_id)).size}</div></div>
     </div>
     <table>
       <thead><tr>
-        <th>Inquilino</th><th>Competência</th><th>Vencimento</th><th>Dias atraso</th>
-        <th style="text-align:right">Saldo devedor</th><th style="text-align:right">Multa</th><th style="text-align:right">Juros</th>
-        <th style="text-align:right">Total atualizado</th><th>Ações</th>
+        <th>Inquilino</th><th>Componente</th><th>Vencimento</th><th>Dias atraso</th>
+        <th style="text-align:right">Valor</th>
       </tr></thead>
       <tbody>
-        ${inad.map(c => `<tr>
-          <td><strong>${c.nome_fantasia || c.razao_social}</strong></td>
-          <td>${fmtBR(c.competencia)}</td>
-          <td>${fmtBR(c.vencimento)}</td>
-          <td style="color:#991b1b;font-weight:600">${c.dias_atraso}</td>
-          <td style="text-align:right">${formatMoney(c.saldo_devedor)}</td>
-          <td style="text-align:right;color:#991b1b">${formatMoney(c.multa_calc)}</td>
-          <td style="text-align:right;color:#991b1b">${formatMoney(c.juros_calc)}</td>
-          <td style="text-align:right;color:#991b1b;font-weight:700">${formatMoney(c.total_atualizado)}</td>
-          <td><button class="btn outline sm" data-pagar-inad="${c.id}">✓ Receber</button></td>
-        </tr>`).join('')}
+        ${inad.map(p => {
+          const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+          return `<tr>
+            <td><strong>${p.contrato_nome || '—'}</strong></td>
+            <td style="font-size:12px"><span style="color:#15803d;font-weight:600">${compLbl[p.componente] || p.componente}</span><br><span style="color:#94a3b8;font-size:11px">${p.sienge_codigo || ''} ${p.parcela_rotulo ? '· ' + p.parcela_rotulo : ''}</span></td>
+            <td>${venc}</td>
+            <td style="color:#991b1b;font-weight:600">${p.dias_atraso || 0}d</td>
+            <td style="text-align:right;color:#991b1b;font-weight:700">${formatMoney(p.valor_corrigido)}</td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>
+    <div style="margin-top:14px;padding:10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;color:#1e40af">
+      💡 Quando uma parcela for paga no SIENGE, reimporte o PDF na ficha do contrato → aba <strong>💰 SIENGE</strong> pra atualizar o status aqui.
+    </div>
   `;
-  box.querySelectorAll('[data-pagar-inad]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const c = inad.find(x => x.id === btn.dataset.pagarInad);
-      if (c) abrirFormPagamento(c);
-    });
-  });
 }
 
 async function renderDespesas(box) {
@@ -273,48 +265,42 @@ async function renderReajustes(box) {
 }
 
 async function renderResumo(box) {
-  const dre = await getDREMensal({});
+  const dre = await getDREMensalSienge(12);
   if (dre.length === 0) {
-    box.innerHTML = `<div style="padding:30px;text-align:center;color:var(--ink-soft)">Sem dados financeiros ainda.</div>`;
+    box.innerHTML = `<div style="padding:30px;text-align:center;color:var(--ink-soft)">Sem dados financeiros ainda. Importe os PDFs do SIENGE pelas fichas dos contratos.</div>`;
     return;
   }
 
   const ultimo = dre[0];
   box.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">
       <div class="kpi green"><div class="kpi-label">Receita recebida (último mês)</div><div class="kpi-value">${formatMoney(ultimo.receita_recebida)}</div></div>
       <div class="kpi amber"><div class="kpi-label">Despesas pagas</div><div class="kpi-value">${formatMoney(ultimo.despesa_paga)}</div></div>
       <div class="kpi"><div class="kpi-label">Resultado de caixa</div><div class="kpi-value" style="color:${Number(ultimo.resultado_caixa) >= 0 ? 'var(--green)' : 'var(--red)'}">${formatMoney(ultimo.resultado_caixa)}</div></div>
-      <div class="kpi accent"><div class="kpi-label">Receita líquida prevista</div><div class="kpi-value">${formatMoney(ultimo.receita_liquida_prevista)}</div></div>
     </div>
-    <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:18px 0 8px">Histórico mensal</h3>
+    <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:18px 0 8px">Histórico mensal (DRE caixa — receita SIENGE + despesas locais)</h3>
     <table>
       <thead><tr>
         <th>Mês</th>
-        <th style="text-align:right">Receita cheia</th>
-        <th style="text-align:right">Descontos</th>
-        <th style="text-align:right">A receber</th>
-        <th style="text-align:right">Recebido</th>
-        <th style="text-align:right">Despesa total</th>
+        <th style="text-align:right">Receita recebida</th>
         <th style="text-align:right">Despesa paga</th>
         <th style="text-align:right">Resultado caixa</th>
       </tr></thead>
       <tbody>
-        ${dre.slice(0, 24).map(m => {
-          const mes = new Date(m.mes).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+        ${dre.map(m => {
+          const mes = new Date(m.mes + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
           const res = Number(m.resultado_caixa);
           return `<tr>
             <td><strong>${mes}</strong></td>
-            <td style="text-align:right">${formatMoney(m.receita_cheia)}</td>
-            <td style="text-align:right;color:#854F0B">${Number(m.descontos_concedidos) > 0 ? '−' + formatMoney(m.descontos_concedidos) : '—'}</td>
-            <td style="text-align:right">${formatMoney(m.receita_liquida_prevista)}</td>
             <td style="text-align:right;color:#166534">${formatMoney(m.receita_recebida)}</td>
-            <td style="text-align:right">${formatMoney(m.despesa_total)}</td>
             <td style="text-align:right;color:#991b1b">${formatMoney(m.despesa_paga)}</td>
             <td style="text-align:right;font-weight:700;color:${res >= 0 ? '#166534' : '#991b1b'}">${formatMoney(res)}</td>
           </tr>`;
         }).join('')}
       </tbody>
     </table>
+    <div style="margin-top:14px;padding:10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;color:#1e40af">
+      💡 Receita extraída do SIENGE (parcelas com data_pagamento no mês). Despesas vêm do módulo local de despesas.
+    </div>
   `;
 }

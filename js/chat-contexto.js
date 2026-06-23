@@ -6,7 +6,8 @@
 import {
   getInquilinos, getContratos, getLojasStatus, getPropostas, getKPIs, getLeads,
   getCobrancas, getInadimplencia, getDespesas, getDREMensal, getDocumentosTodos,
-  getGestoesAtivas, getOcorrenciasPendentesGlobal
+  getGestoesAtivas, getOcorrenciasPendentesGlobal,
+  getReceitaConsolidadaPortfolio, getInadimplenciaSienge, getCobrancasSiengeDoMes, getDREMensalSienge
 } from './data-layer.js';
 import { fmtBR, formatMoney, LABELS_GARANTIA, LABELS_STATUS_PROPOSTA } from './utils.js';
 
@@ -34,7 +35,8 @@ const TIPOS_DOC_LBL = {
 
 export async function gerarContextoCompleto() {
   const mesAtual = new Date().toISOString().slice(0, 7);
-  const [kpis, inquilinos, contratos, propostas, lojas, leads, cobMes, inad, despMes, dre, documentos, gestoes, ocorrenciasPendentes] = await Promise.all([
+  const [kpis, inquilinos, contratos, propostas, lojas, leads, cobMes, inad, despMes, dre, documentos, gestoes, ocorrenciasPendentes,
+         receitaConsol, inadSienge, cobSiengeMes, dreSienge] = await Promise.all([
     getKPIs().catch(() => null),
     getInquilinos().catch(() => []),
     getContratos('ativo').catch(() => []),
@@ -47,7 +49,12 @@ export async function gerarContextoCompleto() {
     getDREMensal({}).catch(() => []),
     getDocumentosTodos().catch(() => []),
     getGestoesAtivas().catch(() => []),
-    getOcorrenciasPendentesGlobal().catch(() => [])
+    getOcorrenciasPendentesGlobal().catch(() => []),
+    // SIENGE (fonte oficial financeira)
+    getReceitaConsolidadaPortfolio().catch(() => null),
+    getInadimplenciaSienge().catch(() => []),
+    getCobrancasSiengeDoMes(mesAtual).catch(() => []),
+    getDREMensalSienge(6).catch(() => [])
   ]);
 
   const areaByCodigo = {};
@@ -272,27 +279,58 @@ export async function gerarContextoCompleto() {
     });
   }
 
-  // ===== Financeiro =====
+  // ===== Financeiro SIENGE (fonte oficial) =====
   linhas.push('');
-  linhas.push('## Financeiro (mes ' + mesAtual + ')');
-  if (cobMes.length > 0) {
-    const cheio = cobMes.reduce((s,c) => s + Number(c.valor_cheio || 0), 0);
-    const desc = cobMes.reduce((s,c) => s + Number(c.desconto_concedido || 0), 0);
-    const dev = cobMes.reduce((s,c) => s + Number(c.valor_devido || 0), 0);
-    const pago = cobMes.filter(c => c.status === 'paga').reduce((s,c) => s + Number(c.valor_pago || c.valor_devido || 0), 0);
-    linhas.push('Cobrancas do mes: ' + cobMes.length + ' | Cheio ' + formatMoney(cheio) + ' | Descontos ' + formatMoney(desc) + ' | A receber ' + formatMoney(dev) + ' | Recebido ' + formatMoney(pago));
-    cobMes.forEach(c => {
-      linhas.push('- ' + (c.nome_fantasia || c.razao_social) + ' | venc ' + fmtBR(c.vencimento) + ' | ' + formatMoney(c.valor_devido) + ' | ' + c.status);
-    });
+  linhas.push('## Financeiro — fonte SIENGE (Saldo Devedor Presente importado dos PDFs)');
+
+  // Receita consolidada do portfolio
+  if (receitaConsol) {
+    const ctrsS = receitaConsol.contratos.filter(c => c.origem === 'sienge');
+    const ctrsE = receitaConsol.contratos.filter(c => c.origem === 'estimado');
+    linhas.push('- Receita consolidada do mes: ' + formatMoney(receitaConsol.total_geral)
+      + ' (' + formatMoney(receitaConsol.total_sienge) + ' via SIENGE + '
+      + formatMoney(receitaConsol.total_estimado) + ' estimado pelos contratos sem SIENGE)');
+    linhas.push('- Contratos com SIENGE: ' + ctrsS.length + ' | sem SIENGE: ' + ctrsE.length);
   }
-  if (inad.length > 0) {
-    const totalAt = inad.reduce((s,c) => s + Number(c.total_atualizado || 0), 0);
+
+  // Cobranças SIENGE do mês corrente (todas as parcelas com vencimento no mes)
+  if (cobSiengeMes && cobSiengeMes.length > 0) {
+    const totalMes = cobSiengeMes.reduce((s, p) => s + Number(p.valor_corrigido || 0), 0);
+    const pagasMes = cobSiengeMes.filter(p => p.status === 'paga');
+    const totalPagasMes = pagasMes.reduce((s, p) => s + Number(p.valor_pago || 0), 0);
     linhas.push('');
-    linhas.push('## INADIMPLENCIA: ' + inad.length + ' em atraso (total atualizado ' + formatMoney(totalAt) + ')');
-    inad.forEach(c => {
-      linhas.push('- ' + (c.nome_fantasia || c.razao_social) + ' | comp ' + fmtBR(c.competencia) + ' | ' + c.dias_atraso + ' dias atraso | saldo ' + formatMoney(c.saldo_devedor) + ' + multa ' + formatMoney(c.multa_calc) + ' + juros ' + formatMoney(c.juros_calc) + ' = ' + formatMoney(c.total_atualizado));
+    linhas.push('## Cobranças SIENGE do mes (' + mesAtual + '): ' + cobSiengeMes.length + ' parcela(s) | total ' + formatMoney(totalMes) + ' | recebido ' + formatMoney(totalPagasMes));
+    cobSiengeMes.forEach(p => {
+      const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : '?';
+      linhas.push('- ' + p.contrato_nome + ' | ' + p.componente + ' ' + (p.sienge_codigo || '') + ' ' + (p.parcela_rotulo || '') + ' | venc ' + venc + ' | ' + formatMoney(p.valor_corrigido) + ' | status ' + p.status);
     });
   }
+
+  // Inadimplência SIENGE (parcelas atrasadas)
+  if (inadSienge && inadSienge.length > 0) {
+    const totalInad = inadSienge.reduce((s, p) => s + Number(p.valor_corrigido || 0), 0);
+    linhas.push('');
+    linhas.push('## INADIMPLÊNCIA (parcelas SIENGE atrasadas): ' + inadSienge.length + ' parcela(s) | total ' + formatMoney(totalInad));
+    inadSienge.forEach(p => {
+      const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR') : '?';
+      linhas.push('- ' + p.contrato_nome + ' | ' + p.componente + ' ' + (p.sienge_codigo || '') + ' ' + (p.parcela_rotulo || '') + ' | venc ' + venc + ' | ' + formatMoney(p.valor_corrigido) + ' | ' + (p.dias_atraso || 0) + ' dias de atraso');
+    });
+  } else {
+    linhas.push('');
+    linhas.push('## INADIMPLÊNCIA: zero parcelas atrasadas no momento.');
+  }
+
+  // DRE caixa via SIENGE
+  if (dreSienge && dreSienge.length > 0) {
+    linhas.push('');
+    linhas.push('## DRE caixa - últimos 6 meses (receita SIENGE + despesas locais)');
+    dreSienge.forEach(m => {
+      const mes = new Date(m.mes + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+      linhas.push('- ' + mes + ' | Receita ' + formatMoney(m.receita_recebida) + ' - Despesa ' + formatMoney(m.despesa_paga) + ' = ' + formatMoney(m.resultado_caixa));
+    });
+  }
+
+  // Despesas (continua local — SIENGE não tem despesas operacionais)
   if (despMes.length > 0) {
     const totalD = despMes.reduce((s,d) => s + Number(d.valor || 0), 0);
     const pagaD = despMes.filter(d => d.status === 'paga').reduce((s,d) => s + Number(d.valor_pago || d.valor || 0), 0);
@@ -300,14 +338,6 @@ export async function gerarContextoCompleto() {
     linhas.push('## Despesas do mes: total ' + formatMoney(totalD) + ' | pago ' + formatMoney(pagaD));
     despMes.forEach(d => {
       linhas.push('- [' + d.categoria + '] ' + d.descricao + ' | venc ' + fmtBR(d.vencimento) + ' | ' + formatMoney(d.valor) + ' | ' + d.status);
-    });
-  }
-  if (dre.length > 0) {
-    linhas.push('');
-    linhas.push('## DRE - ultimos meses (regime de caixa)');
-    dre.slice(0, 6).forEach(m => {
-      const mes = new Date(m.mes).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
-      linhas.push('- ' + mes + ' | Receita ' + formatMoney(m.receita_recebida) + ' - Despesa ' + formatMoney(m.despesa_paga) + ' = ' + formatMoney(m.resultado_caixa));
     });
   }
 
@@ -373,9 +403,14 @@ export async function gerarContextoCompleto() {
   linhas.push('');
   linhas.push('## Alertas/Pendências consolidados (visão executiva)');
   const alertas = [];
+  // Inadimplência SIENGE (substitui cobranças manuais que foram apagadas)
+  if (inadSienge && inadSienge.length > 0) {
+    const tot = inadSienge.reduce((s,p) => s + Number(p.valor_corrigido || 0), 0);
+    alertas.push('• ' + inadSienge.length + ' parcela(s) SIENGE atrasada(s) — total ' + formatMoney(tot));
+  }
   if (inad && inad.length > 0) {
     const tot = inad.reduce((s,c)=>s+Number(c.total_atualizado||0),0);
-    alertas.push('• ' + inad.length + ' cobrança(s) inadimplente(s) — total atualizado ' + formatMoney(tot));
+    alertas.push('• ' + inad.length + ' cobrança(s) manual inadimplente(s) — total atualizado ' + formatMoney(tot));
   }
   const docsVencidos = (documentos || []).filter(d => d.data_validade && new Date(d.data_validade) < hojeDoc);
   const docsVencendo = (documentos || []).filter(d => {
