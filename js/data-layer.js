@@ -1298,13 +1298,17 @@ export async function importarSiengePDF(contratoId, pdfFile) {
       else if (p.data_vencimento && p.data_vencimento < hoje) status = 'atrasada';
       else status = 'a_vencer';
     }
-    // sienge_titulo (legível) reconstruído se a IA não mandar
-    const sienge_titulo = p.sienge_titulo || (p.sienge_titulo_id ? `${p.sienge_titulo_id} / ${p.sienge_codigo}` : p.sienge_codigo);
+    // sienge_titulo (legível) sempre garantido — fallback em cascata
+    const sienge_codigo = p.sienge_codigo || 'SEM_CODIGO';
+    let sienge_titulo = p.sienge_titulo;
+    if (!sienge_titulo) {
+      sienge_titulo = p.sienge_titulo_id ? `${p.sienge_titulo_id} / ${sienge_codigo}` : sienge_codigo;
+    }
     return {
       contrato_id: contratoId,
       sienge_titulo: sienge_titulo,
       sienge_titulo_id: p.sienge_titulo_id || null,
-      sienge_codigo: p.sienge_codigo,
+      sienge_codigo: sienge_codigo,
       componente: p.componente || 'outros',
       parcela_num: p.parcela_num != null ? Number(p.parcela_num) : null,
       parcela_total: p.parcela_total != null ? Number(p.parcela_total) : null,
