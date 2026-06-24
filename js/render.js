@@ -544,12 +544,23 @@ function renderTimeline(contratos) {
     rows.appendChild(row);
   });
 
+  // Escala de anos posicionados PROPORCIONALMENTE ao range real da bar
+  // (não com space-between, que distorce a posição "visual" dos anos)
   const scale = document.getElementById('timeline-scale');
   const startYear = minDate.getFullYear();
   const endYear = maxDate.getFullYear();
-  let scaleHtml = `<div style="width:140px"></div><div style="flex:1;display:flex;justify-content:space-between">`;
-  for (let y = startYear; y <= endYear; y += Math.max(1, Math.floor((endYear-startYear)/8))) {
-    scaleHtml += `<span>${y}</span>`;
+  const step = Math.max(1, Math.floor((endYear - startYear) / 8));
+  let scaleHtml = `<div style="width:140px"></div><div style="flex:1;position:relative;height:14px">`;
+  for (let y = startYear; y <= endYear; y += step) {
+    const yDate = new Date(y, 0, 1);
+    const pct = ((yDate - minDate) / totalSpan) * 100;
+    if (pct < 0 || pct > 100) continue;
+    // transform:translateX(-50%) centraliza o label no ponto exato do ano
+    // exceto no primeiro (alinha left) e no último (alinha right) para não cortar
+    let transform = 'translateX(-50%)';
+    if (pct < 4) transform = 'translateX(0)';
+    else if (pct > 96) transform = 'translateX(-100%)';
+    scaleHtml += `<span style="position:absolute;left:${pct}%;transform:${transform};white-space:nowrap">${y}</span>`;
   }
   scaleHtml += `</div><div style="width:90px"></div>`;
   scale.innerHTML = scaleHtml;
@@ -1308,7 +1319,6 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
       tr.style.cssText = 'border-bottom:0.5px solid #f1f5f9;cursor:' + (c ? 'pointer' : 'default') + ';' + (bg ? 'background:' + bg : '');
       tr.innerHTML =
         '<td style="padding:4px 6px"><strong>' + l.codigo + '</strong></td>' +
-        '<td style="text-align:right;padding:4px 6px">' + (area > 0 ? area.toFixed(1) : '—') + '</td>' +
         '<td style="text-align:right;padding:4px 6px;color:' + cor + '">' + valorMes + '</td>' +
         '<td style="text-align:right;padding:4px 6px;color:#94a3b8">' + valorM2 + '</td>' +
         '<td style="padding:4px 6px;color:' + cor + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="' + nome.replace(/"/g, '&quot;') + '">' + nome + '</td>';
