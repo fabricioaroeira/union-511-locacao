@@ -220,7 +220,11 @@ function atualizarInfo(cod) {
 // Handles de redimensionamento (8 cantos/lados)
 // =====================================================================
 function renderHandles(cod) {
-  const layer = document.getElementById('planta-handles');
+  // Acha o handle layer DENTRO do SVG da loja selecionada — evita pegar duplicata
+  // (em fullscreen, pode haver outro #planta-handles em outro grid)
+  const rectLoja = document.querySelector(`[data-loja="${cod}"] .loja-rect`);
+  const svg = rectLoja?.closest('svg');
+  const layer = svg ? svg.querySelector('#planta-handles') : document.getElementById('planta-handles');
   if (!layer) return;
   layer.innerHTML = '';
   const c = coordsAtuais[cod];
@@ -356,7 +360,6 @@ document.addEventListener('keydown', (ev) => {
 
   if (mudou) {
     ev.preventDefault();
-    coordsAtuais[cod] = c;
     salvarCoords(coordsAtuais);
     const rect = document.querySelector(`[data-loja="${cod}"] .loja-rect`);
     if (rect) {

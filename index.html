@@ -486,18 +486,17 @@ document.querySelectorAll('[data-lead-filtro]').forEach(btn => {
   });
 });
 
-// 5.5 Mapa em tela cheia (clona o conteúdo do grid normal)
+// 5.5 Mapa em tela cheia
+// IMPORTANTE: limpa o #grid original pra evitar IDs duplicados no DOM
+// (os SVGs e o #planta-handles existem dentro do grid; manter dois quebra getElementById)
 document.getElementById('btn-mapa-fullscreen').addEventListener('click', () => {
   const fs = document.getElementById('mapa-fullscreen');
-  const gridFs = document.getElementById('grid-fs');
   const gridOrig = document.getElementById('grid');
-  // Move o conteúdo do grid pro fullscreen (substituição temporária)
-  gridFs.innerHTML = gridOrig.innerHTML;
-  // Re-anexa eventos via re-render
+  // Esvazia o grid original pra evitar #planta-handles duplicado no DOM
+  gridOrig.innerHTML = '';
   import('./js/render.js').then(({ renderTudo }) => {
     fs.style.display = 'flex';
     document.body.style.overflow = 'hidden';
-    // Faz o render apontar pra grid-fs também
     setState('mapaFullscreenAtivo', true);
     renderTudo();
   });
