@@ -1228,11 +1228,19 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
   const resumoEl = document.getElementById('acomp-resumo');
   const legendaEl = document.getElementById('acomp-legenda');
 
-  // Mapa loja → contrato/proposta
+  // Mapa loja → contrato/proposta + mapa código → loja (para somar áreas)
+  const lojaPorCodigo = {};
+  (lojas || []).forEach(l => { lojaPorCodigo[l.codigo] = l; });
   const ctrPorLoja = {};
   (contratos || []).forEach(c => (c.lojas || []).forEach(cod => { ctrPorLoja[cod] = c; }));
   const propPorLoja = {};
   (propostas || []).forEach(p => (p.lojas || []).forEach(cod => { if (!propPorLoja[cod]) propPorLoja[cod] = p; }));
+
+  // Helper: soma das áreas privativas das lojas de um contrato/proposta
+  const somarAreas = (codigos) => (codigos || []).reduce((s, cod) => {
+    const l = lojaPorCodigo[cod];
+    return s + (Number(l?.area_privativa) || 0);
+  }, 0);
 
   // Conta por status
   const ocupadas = lojas.filter(l => l.status === 'ocupada').length;
@@ -1278,18 +1286,19 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
       } else if (c) {
         cor = '#A32D2D'; bg = '';
         const v = Number(c.valor_aluguel || 0);
-        // Distribui valor proporcionalmente quando contrato tem várias lojas
-        const lojasCt = (c.lojas || []).length;
-        const valorLoja = lojasCt > 1 ? v / lojasCt : v;
+        // R$/m² médio do contrato: valor total ÷ área total do contrato
+        // (igual em todas as lojas do mesmo contrato — aritmeticamente consistente)
+        const areaContrato = somarAreas(c.lojas);
         valorMes = v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-        valorM2 = area > 0 ? (valorLoja / area).toFixed(0) : '—';
+        valorM2 = areaContrato > 0 ? (v / areaContrato).toFixed(0) : '—';
         nome = c.nome_fantasia || c.razao_social || '?';
       } else if (p) {
         cor = '#854F0B'; bg = '';
         const v = Number(p.valor_aluguel || 0);
         valorMes = v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-        const areaTotal = Number(p.area_total) || area;
-        valorM2 = areaTotal > 0 ? (v / areaTotal).toFixed(0) : '—';
+        // Para propostas: usa area_total declarada na proposta; senão soma das áreas das lojas
+        const areaProp = Number(p.area_total) || somarAreas(p.lojas) || area;
+        valorM2 = areaProp > 0 ? (v / areaProp).toFixed(0) : '—';
         nome = '⏳ ' + (p.cliente_nome || 'proposta');
       } else {
         cor = '#3B6D11'; bg = '';
