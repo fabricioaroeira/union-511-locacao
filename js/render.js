@@ -519,8 +519,13 @@ function renderTimeline(contratos) {
     return { c, ini, fim };
   });
   if (!dados.length) return;
-  const minDate = new Date(Math.min(...dados.map(d => d.ini)));
-  const maxDate = new Date(Math.max(...dados.map(d => d.fim)));
+  // ARREDONDA o range para anos inteiros (01/jan do startYear → 01/jan do endYear+1)
+  // Assim cada label de ano cai exatamente em sua posição esperada na escala,
+  // e a linha vermelha de "hoje" fica alinhada visualmente com onde "estamos" no calendário.
+  const rawMin = new Date(Math.min(...dados.map(d => d.ini)));
+  const rawMax = new Date(Math.max(...dados.map(d => d.fim)));
+  const minDate = new Date(rawMin.getFullYear(), 0, 1);              // 01/jan do ano de início
+  const maxDate = new Date(rawMax.getFullYear() + 1, 0, 1);          // 01/jan do ano seguinte ao fim
   const totalSpan = maxDate - minDate;
 
   const rows = document.getElementById('timeline-rows');
@@ -544,22 +549,20 @@ function renderTimeline(contratos) {
     rows.appendChild(row);
   });
 
-  // Escala de anos posicionados PROPORCIONALMENTE ao range real da bar
-  // (não com space-between, que distorce a posição "visual" dos anos)
+  // Escala: como o range foi arredondado para anos inteiros,
+  // cada ano cai exatamente em pct = (y - startYear) / qtdAnos × 100
   const scale = document.getElementById('timeline-scale');
-  const startYear = minDate.getFullYear();
-  const endYear = maxDate.getFullYear();
-  const step = Math.max(1, Math.floor((endYear - startYear) / 8));
+  const startYear = minDate.getFullYear();              // 01/jan do startYear
+  const endYear = maxDate.getFullYear();                // 01/jan do (endYear); maxDate é o jan do ano seguinte
+  const totalAnos = endYear - startYear;                // qtd de anos
+  const step = Math.max(1, Math.floor(totalAnos / 9));
   let scaleHtml = `<div style="width:140px"></div><div style="flex:1;position:relative;height:14px">`;
   for (let y = startYear; y <= endYear; y += step) {
-    const yDate = new Date(y, 0, 1);
-    const pct = ((yDate - minDate) / totalSpan) * 100;
-    if (pct < 0 || pct > 100) continue;
-    // transform:translateX(-50%) centraliza o label no ponto exato do ano
-    // exceto no primeiro (alinha left) e no último (alinha right) para não cortar
+    const pct = ((y - startYear) / totalAnos) * 100;
+    // alinhamento: primeiro à esquerda, último à direita, demais centralizados
     let transform = 'translateX(-50%)';
-    if (pct < 4) transform = 'translateX(0)';
-    else if (pct > 96) transform = 'translateX(-100%)';
+    if (y === startYear) transform = 'translateX(0)';
+    else if (y === endYear) transform = 'translateX(-100%)';
     scaleHtml += `<span style="position:absolute;left:${pct}%;transform:${transform};white-space:nowrap">${y}</span>`;
   }
   scaleHtml += `</div><div style="width:90px"></div>`;
@@ -1320,7 +1323,6 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
       tr.innerHTML =
         '<td style="padding:4px 6px"><strong>' + l.codigo + '</strong></td>' +
         '<td style="text-align:right;padding:4px 6px;color:' + cor + '">' + valorMes + '</td>' +
-        '<td style="text-align:right;padding:4px 6px;color:#94a3b8">' + valorM2 + '</td>' +
         '<td style="padding:4px 6px;color:' + cor + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="' + nome.replace(/"/g, '&quot;') + '">' + nome + '</td>';
       if (c) {
         tr.addEventListener('mouseenter', () => { tr.style.background = '#f8fafc'; });
