@@ -419,6 +419,8 @@ tr:hover td{background:#fafbfc}
 .timeline-fill.amber{background:var(--amber)}
 .timeline-marker-today{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--red);z-index:3;border-radius:1px}
 .timeline-marker{position:absolute;top:-2px;width:2px;height:18px;background:var(--red);z-index:2}
+.timeline-scale{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ink-soft);margin-top:6px;padding-bottom:4px}
+.timeline-labels{display:grid;grid-template-columns:140px 1fr 90px;gap:10px;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;padding-bottom:6px;border-bottom:1px solid var(--line);margin-bottom:4px}
 
 /* =====================================================================
    RESPONSIVIDADE — MOBILE (≤768px) e TABLET (≤1024px)
