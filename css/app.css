@@ -413,8 +413,11 @@ tr:hover td{background:#fafbfc}
 }
 .timeline-row:last-child{border-bottom:none}
 .timeline-name{font-weight:600}
-.timeline-bar{position:relative;height:14px;background:#eef2f7;border-radius:4px;overflow:hidden}
+.timeline-bar{position:relative;height:14px;background:#eef2f7;border-radius:4px}
 .timeline-fill{position:absolute;top:0;left:0;height:100%;background:var(--accent);border-radius:4px}
+.timeline-fill.violet{background:var(--violet)}
+.timeline-fill.amber{background:var(--amber)}
+.timeline-marker-today{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--red);z-index:3;border-radius:1px}
 .timeline-marker{position:absolute;top:-2px;width:2px;height:18px;background:var(--red);z-index:2}
 
 /* =====================================================================
