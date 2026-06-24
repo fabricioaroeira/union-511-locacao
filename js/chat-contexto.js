@@ -157,7 +157,7 @@ export async function gerarContextoCompleto() {
   });
 
   // ===== Propostas (TODAS) =====
-  const propAtivas = propostas.filter(p => ['em_analise', 'aceita_aguardando_docs'].includes(p.status));
+  const propAtivas = propostas.filter(p => ['em_analise', 'em_negociacao', 'aceita_aguardando_docs'].includes(p.status));
   const propRecusadas = propostas.filter(p => p.status === 'recusada');
   const propExpiradas = propostas.filter(p => p.status === 'expirada');
   const propConvertidas = propostas.filter(p => p.status === 'convertida_em_contrato');

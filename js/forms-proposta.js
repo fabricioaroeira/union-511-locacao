@@ -64,6 +64,7 @@ export async function abrirFormProposta(id = null, opts = {}) {
     name:'status', label:'Status', type:'select',
     options:[
       { value:'em_analise', label:'Em análise' },
+      { value:'em_negociacao', label:'Em negociação' },
       { value:'aceita_aguardando_docs', label:'Aceita — aguardando documentação' },
       { value:'recusada', label:'Recusada' },
       { value:'expirada', label:'Expirada' }
@@ -298,7 +299,8 @@ export async function abrirFormProposta(id = null, opts = {}) {
     const opcoes = [
       { v: 'interessado', l: 'Interessado' },
       { v: 'visitou',     l: 'Visitou' },
-      { v: 'em_analise',  l: 'Em análise' }
+      { v: 'em_analise',  l: 'Em análise' },
+      { v: 'em_negociacao', l: 'Em negociação' }
     ];
     opcoes.forEach(function(o) {
       const op = el('option', { value: o.v }, 'Voltar lead pra: ' + o.l);

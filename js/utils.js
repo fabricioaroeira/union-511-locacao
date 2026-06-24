@@ -92,6 +92,7 @@ export const LABELS_GARANTIA = {
 
 export const LABELS_STATUS_PROPOSTA = {
   em_analise: 'Em análise',
+  em_negociacao: 'Em negociação',
   aceita_aguardando_docs: 'Aceita — aguardando docs',
   convertida_em_contrato: 'Convertida em contrato',
   recusada: 'Recusada',

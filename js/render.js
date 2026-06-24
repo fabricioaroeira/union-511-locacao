@@ -865,7 +865,7 @@ function renderFunilComercial(leads, propostas, contratos) {
   if (!box) return;
 
   const leadsAtivos = (leads || []).filter(l => ['interessado','visitou','em_analise'].includes(l.status));
-  const propAtivas = propostas.filter(p => ['em_analise','aceita_aguardando_docs'].includes(p.status));
+  const propAtivas = propostas.filter(p => ['em_analise','em_negociacao','aceita_aguardando_docs'].includes(p.status));
   const contratosAtivos = contratos.length;
 
   const leadsInteressado = leadsAtivos.filter(l => l.status === 'interessado').length;

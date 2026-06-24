@@ -127,7 +127,7 @@ export async function getLojasStatus() {
           const propAceita = store.propostas.find(p => p.status === 'aceita_aguardando_docs' && p.lojas.includes(codigo));
           if (propAceita) status = 'proposta_aceita';
           else {
-            const propAnalise = store.propostas.find(p => p.status === 'em_analise' && p.lojas.includes(codigo));
+            const propAnalise = store.propostas.find(p => ['em_analise','em_negociacao'].includes(p.status) && p.lojas.includes(codigo));
             if (propAnalise) status = 'proposta_analise';
           }
         }
@@ -153,7 +153,7 @@ export async function getKPIs() {
     store.contratos.filter(c => c.status === 'ativo').forEach(c => c.lojas.forEach(l => ocupadas.add(l)));
     const inquilinosAtivos = new Set(store.contratos.filter(c => c.status === 'ativo').map(c => c.inquilino_id));
     const receita = store.contratos.filter(c => c.status === 'ativo').reduce((s, c) => s + Number(c.valor_aluguel), 0);
-    const propAtivas = store.propostas.filter(p => ['em_analise','aceita_aguardando_docs'].includes(p.status)).length;
+    const propAtivas = store.propostas.filter(p => ['em_analise','em_negociacao','aceita_aguardando_docs'].includes(p.status)).length;
     return {
       total_lojas: 52,
       lojas_internas: store.lojasInternas.length,
@@ -331,7 +331,7 @@ export async function getPropostas(statusFilter = 'ativas') {
     const store = loadStore();
     let lista = store.propostas;
     if (statusFilter === 'ativas') {
-      lista = lista.filter(p => ['em_analise','aceita_aguardando_docs'].includes(p.status));
+      lista = lista.filter(p => ['em_analise','em_negociacao','aceita_aguardando_docs'].includes(p.status));
     } else if (statusFilter !== 'all') {
       lista = lista.filter(p => p.status === statusFilter);
     }
@@ -343,7 +343,7 @@ export async function getPropostas(statusFilter = 'ativas') {
   } else {
     const supa = await getSupabase();
     let q = supa.from('v_propostas_completo').select('*');
-    if (statusFilter === 'ativas') q = q.in('status', ['em_analise','aceita_aguardando_docs']);
+    if (statusFilter === 'ativas') q = q.in('status', ['em_analise','em_negociacao','aceita_aguardando_docs']);
     else if (statusFilter !== 'all') q = q.eq('status', statusFilter);
     const { data } = await q;
     return data;
