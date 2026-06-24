@@ -1322,7 +1322,9 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
       tr.style.cssText = 'border-bottom:0.5px solid #f1f5f9;cursor:' + (c ? 'pointer' : 'default') + ';' + (bg ? 'background:' + bg : '');
       tr.innerHTML =
         '<td style="padding:4px 6px"><strong>' + l.codigo + '</strong></td>' +
+        '<td style="text-align:right;padding:4px 6px">' + (area > 0 ? area.toFixed(1) : '—') + '</td>' +
         '<td style="text-align:right;padding:4px 6px;color:' + cor + '">' + valorMes + '</td>' +
+        '<td style="text-align:right;padding:4px 6px;color:#94a3b8">' + valorM2 + '</td>' +
         '<td style="padding:4px 6px;color:' + cor + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="' + nome.replace(/"/g, '&quot;') + '">' + nome + '</td>';
       if (c) {
         tr.addEventListener('mouseenter', () => { tr.style.background = '#f8fafc'; });
