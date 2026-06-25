@@ -302,7 +302,7 @@ function renderTabelaDisponiveis(lojas, propostas) {
     if (p) {
       badge = p.status === 'aceita_aguardando_docs'
         ? '<span class="badge" style="background:var(--accent-soft);color:var(--accent)">Aceita — aguard. docs</span>'
-        : '<span class="badge negociacao">Em análise</span>';
+        : '<span class="badge negociacao">' + (LABELS_STATUS_PROPOSTA[p.status] || 'Em análise') + '</span>';
       area = (p.lojas[0] === l.codigo) ? formatArea(p.area_total) : '<span style="color:#94a3b8">↑ no conjunto</span>';
       const rsm = p.area_total ? (p.valor_aluguel / p.area_total) : null;
       pipeline = `<strong>${p.cliente_nome}</strong> · ${p.ramo}<br>
@@ -428,7 +428,7 @@ function renderPropostas(propostas, filtroAtual = 'ativas', propostasAtivas = []
     const card = el('div', { className: 'proposta-card ' + (isAceita ? 'aceita' : 'analise') });
     const statusBadge = isAceita
       ? '<span class="badge" style="background:var(--accent-soft);color:var(--accent)">Aceita — aguardando docs</span>'
-      : '<span class="badge negociacao">Em análise</span>';
+      : '<span class="badge negociacao">' + (LABELS_STATUS_PROPOSTA[p.status] || 'Em análise') + '</span>';
     const lojasStr = p.lojas?.length > 1 ? `Lojas ${p.lojas.join(' + ')}` : `Loja ${p.lojas?.[0] || '?'}`;
     const rsm = p.area_total ? (p.valor_aluguel / p.area_total) : 0;
     const gapMedio = ((rsm - REF_RSM.medio) / REF_RSM.medio * 100);
@@ -1329,7 +1329,16 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
       if (c) {
         tr.addEventListener('mouseenter', () => { tr.style.background = '#f8fafc'; });
         tr.addEventListener('mouseleave', () => { tr.style.background = bg || ''; });
-        tr.addEventListener('click', () => abrirFichaLoja(c.id));
+        tr.addEventListener('click', () => {
+          // Troca pra aba "Lojas Alugadas" (onde a ficha é renderizada) e abre
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.panel').forEach(pn => pn.classList.remove('active'));
+          document.querySelector('[data-panel="ocupadas"]')?.classList.add('active');
+          document.getElementById('ocupadas')?.classList.add('active');
+          abrirFichaLoja(c.id);
+          // Rola pra o topo do card
+          document.getElementById('ocupadas')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
       }
       tbody.appendChild(tr);
     });
