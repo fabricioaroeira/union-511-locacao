@@ -384,6 +384,8 @@ function preencherCamposComExtracao(body, dados, picker, inquilinos) {
       set('inquilino_id', match.id);
     } else if (dados.inquilino_razao_social) {
       const sel = body.querySelector('[name="inquilino_id"]');
+      const docLimpoNovo = (dados.inquilino_documento || '').replace(/\D/g, '');
+      const tipoInferido = docLimpoNovo.length === 11 ? 'PF' : 'PJ';
       if (sel) {
         const labelNovo = '✨ Criar novo: ' + (dados.inquilino_nome_fantasia || dados.inquilino_razao_social) + (dados.inquilino_documento ? ' (' + dados.inquilino_documento + ')' : '');
         const opt = document.createElement('option');
@@ -391,9 +393,9 @@ function preencherCamposComExtracao(body, dados, picker, inquilinos) {
         opt.textContent = labelNovo;
         sel.appendChild(opt);
         sel.value = '__NOVO__';
+        // Dispara change pra abrir o subform de novo inquilino
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
       }
-      const docLimpoNovo = (dados.inquilino_documento || '').replace(/\D/g, '');
-      const tipoInferido = docLimpoNovo.length === 11 ? 'PF' : 'PJ';
       novoInquilinoData = {
         tipo: tipoInferido,
         razao_social: dados.inquilino_razao_social,
@@ -404,6 +406,22 @@ function preencherCamposComExtracao(body, dados, picker, inquilinos) {
         telefone: dados.telefone_inquilino || null
       };
       body._novoInquilino = novoInquilinoData;
+      // Preenche visualmente os campos do subform novo inquilino
+      const setNovo = (key, value) => {
+        if (value === null || value === undefined || value === '') return;
+        const inp = body.querySelector('[data-novo="' + key + '"]');
+        if (!inp) return;
+        inp.value = value;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      setNovo('tipo', tipoInferido);
+      setNovo('documento', dados.inquilino_documento);
+      setNovo('razao_social', dados.inquilino_razao_social);
+      setNovo('nome_fantasia', dados.inquilino_nome_fantasia);
+      setNovo('segmento', dados.segmento_inquilino);
+      setNovo('email', dados.email_inquilino);
+      setNovo('telefone', dados.telefone_inquilino);
     }
   }
   if (Array.isArray(dados.lojas) && dados.lojas.length > 0 && picker?.setSelected) {
