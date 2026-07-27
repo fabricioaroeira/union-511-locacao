@@ -555,6 +555,15 @@ function montarFormDados(c, inquilinos, lojasStatus) {
   ];
   const grid1 = el('div', { className: 'form-grid' });
   grid1.appendChild(campo({ name: 'inquilino_id', label: 'Inquilino', type: 'select', options: inqOptions, value: c.inquilino_id || '', required: true, full: true }));
+  // Nome fantasia deste CONTRATO (opcional) — útil quando o inquilino opera marcas diferentes em contratos diferentes
+  grid1.appendChild(campo({
+    name: 'nome_fantasia_contrato',
+    label: 'Nome fantasia deste contrato (opcional)',
+    type: 'text',
+    value: c.nome_fantasia_contrato || '',
+    placeholder: 'Ex.: Piticas, Mahogany. Deixe em branco pra usar o nome do inquilino.',
+    full: true
+  }));
   sec1.appendChild(grid1);
   form.appendChild(sec1);
 
