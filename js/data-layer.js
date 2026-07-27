@@ -121,7 +121,7 @@ export async function getLojasStatus() {
         if (contrato) {
           status = 'ocupada';
           const inq = store.inquilinos.find(i => i.id === contrato.inquilino_id);
-          inquilino_atual = inq?.nome_fantasia || inq?.razao_social;
+          inquilino_atual = contrato.nome_fantasia_contrato || inq?.nome_fantasia || inq?.razao_social;
           parcial = contrato.parcial;
         } else {
           const propAceita = store.propostas.find(p => p.status === 'aceita_aguardando_docs' && p.lojas.includes(codigo));
@@ -238,6 +238,16 @@ export async function getContratos(statusFilter = 'ativo') {
     let q = supa.from('v_contratos_completo').select('*');
     if (statusFilter !== 'all') q = q.eq('status', statusFilter);
     const { data } = await q;
+    if (!data) return data;
+    // Busca nome_fantasia_contrato (campo NOVO em contratos, ainda pode não estar na view)
+    try {
+      const ids = data.map(c => c.id);
+      if (ids.length > 0) {
+        const { data: extras } = await supa.from('contratos').select('id, nome_fantasia_contrato').in('id', ids);
+        const mapa = Object.fromEntries((extras || []).map(x => [x.id, x.nome_fantasia_contrato]));
+        data.forEach(c => { c.nome_fantasia_contrato = mapa[c.id] || null; });
+      }
+    } catch (_) { /* coluna pode ainda não existir; ignora silenciosamente */ }
     return data;
   }
 }
@@ -249,6 +259,12 @@ export async function getContrato(id) {
   }
   const supa = await getSupabase();
   const { data } = await supa.from('v_contratos_completo').select('*').eq('id', id).single();
+  if (data) {
+    try {
+      const { data: extra } = await supa.from('contratos').select('nome_fantasia_contrato').eq('id', id).single();
+      data.nome_fantasia_contrato = extra?.nome_fantasia_contrato || null;
+    } catch (_) { /* coluna pode ainda não existir */ }
+  }
   return data;
 }
 
@@ -1122,6 +1138,188 @@ export async function marcarGestaoExecutada(gestaoId) {
 }
 
 // =====================================================================
+// KIT PADRÃO DE GESTÕES — cria automaticamente ao salvar contrato novo
+// Baseado em SQL_GESTOES_KIT_PADRAO.sql (10 gestões estruturais)
+// Retorna { qtd, erros } — qtd inseridas com sucesso, erros se algum falhou.
+// =====================================================================
+export async function criarGestoesAutomaticas(contratoId, contrato) {
+  if (MOCK_MODE) return { qtd: 0, erros: [] };
+  if (!contratoId || !contrato) return { qtd: 0, erros: ['dados incompletos'] };
+
+  const supa = await getSupabase();
+
+  // helper pra adicionar N meses a uma data ISO (YYYY-MM-DD) sem drift de fuso
+  const addMonths = (iso, meses) => {
+    if (!iso) return null;
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setMonth(dt.getMonth() + meses);
+    return dt.toISOString().slice(0, 10);
+  };
+  const addDays = (iso, dias) => {
+    if (!iso) return null;
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + dias);
+    return dt.toISOString().slice(0, 10);
+  };
+
+  const inicio = contrato.data_inicio;
+  const prazo = Number(contrato.prazo_meses || 0);
+  const carencia = Number(contrato.meses_carencia || 0);
+  const indice = contrato.indice_reajuste || 'IGP-M';
+  const garantia = contrato.tipo_garantia || 'garantia';
+
+  if (!inicio || !prazo) return { qtd: 0, erros: ['contrato sem data_inicio ou prazo_meses'] };
+
+  const termino = addMonths(inicio, prazo);
+  const gestoes = [];
+
+  // 1) Fim da carência (só se houver)
+  if (carencia > 0) {
+    gestoes.push({
+      contrato_id: contratoId,
+      titulo: 'Fim da carência',
+      tipo: 'carencia_fim',
+      descricao: carencia + ' meses de carência (começa após pagamento do 1º mês). Quando atingir esta data, a cobrança volta ao normal.',
+      clausula_origem: 'Quadro Resumo — carência contratual',
+      data_evento: addMonths(inicio, carencia),
+      recorrencia: 'one_off',
+      dias_aviso: [7, 3],
+      gerado_por: 'ia'
+    });
+  }
+
+  // 2) Aniversário / Reajuste anual (recorrente até término)
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Aniversário do contrato / Reajuste anual',
+    tipo: 'reajuste_aniversario',
+    descricao: 'Reajuste anual pelo ' + indice + '. Se variação negativa, mantém valor.',
+    clausula_origem: 'Cláusula de reajuste do Quadro Resumo',
+    data_evento: addMonths(inicio, 12),
+    recorrencia: 'anual',
+    recorrencia_ate: termino,
+    dias_aviso: [30, 15, 7],
+    parametros: { indice, fallback: 'IPCA', bloquear_se_negativo: true, calcular_valor: true },
+    gerado_por: 'ia'
+  });
+
+  // 3) Marco 5 anos (só se prazo >= 60 meses)
+  if (prazo >= 60) {
+    gestoes.push({
+      contrato_id: contratoId,
+      titulo: 'Janela legal de ação renovatória (Lei 8.245)',
+      tipo: 'marco_5anos',
+      descricao: 'Início da janela legal (1 a 0,5 ano antes do término). Decidir se renova, retoma ou renegocia.',
+      clausula_origem: 'Lei 8.245/91, art. 51',
+      data_evento: addMonths(termino, -12),
+      recorrencia: 'one_off',
+      dias_aviso: [60, 30],
+      gerado_por: 'ia'
+    });
+  }
+
+  // 4) Aviso prévio de devolução (30 dias antes do término)
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Aviso prévio de devolução',
+    tipo: 'aviso_devolucao',
+    descricao: 'Início do período mínimo de 30 dias antes da entrega do imóvel.',
+    clausula_origem: 'Cláusula de devolução do contrato',
+    data_evento: addDays(termino, -30),
+    recorrencia: 'one_off',
+    dias_aviso: [14, 7],
+    gerado_por: 'ia'
+  });
+
+  // 5) Término do contrato
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Término do contrato',
+    tipo: 'termino',
+    descricao: 'Devolução automática. Decidir antes: renovação, retomada ou novo contrato.',
+    clausula_origem: 'Quadro Resumo — vigência',
+    data_evento: termino,
+    recorrencia: 'one_off',
+    dias_aviso: [180, 90, 60, 30],
+    gerado_por: 'ia'
+  });
+
+  // 6) Reanálise da garantia (anual)
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Reanálise da garantia (' + garantia + ')',
+    tipo: 'validacao_fianca',
+    descricao: 'Solicitar certidões negativas e/ou comprovantes da garantia (' + garantia + ') e reanalisar.',
+    clausula_origem: 'Quadro Resumo — garantia',
+    data_evento: addMonths(inicio, 12),
+    recorrencia: 'anual',
+    recorrencia_ate: termino,
+    dias_aviso: [30],
+    gerado_por: 'ia'
+  });
+
+  // 7) Solicitar comprovantes (semestral)
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Solicitar comprovantes (IPTU/condomínio/água/luz)',
+    tipo: 'comprovantes',
+    descricao: 'Locatário deve fornecer cópias quando solicitado. Cobrar semestralmente como auditoria preventiva.',
+    clausula_origem: 'Cláusula de tributos/encargos',
+    data_evento: addMonths(inicio, 6),
+    recorrencia: 'semestral',
+    recorrencia_ate: termino,
+    dias_aviso: [7],
+    gerado_por: 'ia'
+  });
+
+  // 8) Vistoria preventiva (anual)
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Vistoria preventiva do imóvel',
+    tipo: 'vistoria',
+    descricao: 'Agendamento anual de vistoria preventiva com aviso prévio ao locatário.',
+    clausula_origem: 'Cláusula de vistoria',
+    data_evento: addMonths(inicio, 12),
+    recorrencia: 'anual',
+    recorrencia_ate: termino,
+    dias_aviso: [14],
+    gerado_por: 'ia'
+  });
+
+  // 9) Apólice de seguro (anual)
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Pedir apólice de seguro vigente',
+    tipo: 'seguro',
+    descricao: 'Locatário responsável pela contratação de seguro incêndio + seguro das mercadorias. Pedir cópia anualmente.',
+    clausula_origem: 'Cláusula de seguros',
+    data_evento: addMonths(inicio, 12),
+    recorrencia: 'anual',
+    recorrencia_ate: termino,
+    dias_aviso: [30],
+    gerado_por: 'ia'
+  });
+
+  // 10) Alteração de uso — informativa (sem data)
+  gestoes.push({
+    contrato_id: contratoId,
+    titulo: 'Alteração de uso requer anuência prévia',
+    tipo: 'destinacao',
+    descricao: 'Mudança da destinação comercial só com anuência prévia da locadora. Regra informativa.',
+    clausula_origem: 'Cláusula de destinação do imóvel',
+    recorrencia: 'informativo',
+    parametros: { so_consulta: true },
+    gerado_por: 'ia'
+  });
+
+  const { error } = await supa.from('gestoes_contrato').insert(gestoes);
+  if (error) return { qtd: 0, erros: [error.message] };
+  return { qtd: gestoes.length, erros: [] };
+}
+
+// =====================================================================
 // ADMINISTRAÇÃO DE USUÁRIOS (papéis) — apenas admin
 // =====================================================================
 
@@ -1255,7 +1453,7 @@ export async function getReceitaConsolidadaPortfolio() {
     else total_estimado += valor;
     return {
       id: c.id,
-      nome: c.nome_fantasia || c.razao_social,
+      nome: c.nome_fantasia_contrato || c.nome_fantasia || c.razao_social,
       valor,
       valor_contratual: valorContratual,
       origem: (tem && Number(s.valor_mes_atual) > 0) ? 'sienge' : 'estimado'
@@ -1287,7 +1485,7 @@ export async function getInadimplenciaSienge() {
 
   const ids = [...new Set(parcs.map(p => p.contrato_id))];
   const { data: ctrs } = await supa.from('v_contratos_completo').select('id, nome_fantasia, razao_social').in('id', ids);
-  const nome = Object.fromEntries((ctrs || []).map(c => [c.id, c.nome_fantasia || c.razao_social]));
+  const nome = Object.fromEntries((ctrs || []).map(c => [c.id, c.nome_fantasia_contrato || c.nome_fantasia || c.razao_social]));
 
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   return parcs.map(p => {
@@ -1324,7 +1522,7 @@ export async function getCobrancasSiengeDoMes(yyyymm) {
 
   const ids = [...new Set(parcs.map(p => p.contrato_id))];
   const { data: ctrs } = await supa.from('v_contratos_completo').select('id, nome_fantasia, razao_social').in('id', ids);
-  const nome = Object.fromEntries((ctrs || []).map(c => [c.id, c.nome_fantasia || c.razao_social]));
+  const nome = Object.fromEntries((ctrs || []).map(c => [c.id, c.nome_fantasia_contrato || c.nome_fantasia || c.razao_social]));
   return parcs.map(p => ({ ...p, contrato_nome: nome[p.contrato_id] || '?' }));
 }
 

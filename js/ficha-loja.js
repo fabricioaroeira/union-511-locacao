@@ -205,7 +205,7 @@ function montarFicha(contrato, dados) {
 function montarHeader(c, dados) {
   const header = el('div', { className: 'ficha-header' });
   const lojas = (c.lojas || []).join(', ');
-  const nome = c.nome_fantasia || c.razao_social || '(sem nome)';
+  const nome = c.nome_fantasia_contrato || c.nome_fantasia || c.razao_social || '(sem nome)';
   const termino = c.data_termino || fmtBR(addMonths(parseBR(c.data_inicio), c.prazo_meses));
   const diasTermino = diasAte(termino);
   const corTermino = corUrgencia(diasTermino);

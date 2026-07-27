@@ -107,6 +107,19 @@ export async function abrirFormContrato(id = null, opts = {}) {
     }
   };
   selInq.addEventListener('change', toggleSubForm);
+
+  // Nome fantasia deste CONTRATO (opcional) — útil quando o inquilino opera
+  // marcas diferentes em contratos diferentes (ex.: Piticas na loja 06, Mahogany na loja 13).
+  const gridNomeCtr = el('div', { className: 'form-grid' });
+  gridNomeCtr.appendChild(campo({
+    name: 'nome_fantasia_contrato',
+    label: 'Nome fantasia deste contrato (opcional)',
+    type: 'text',
+    value: dados.nome_fantasia_contrato || '',
+    placeholder: 'Ex.: Piticas, Mahogany. Deixe em branco pra usar o nome do inquilino.',
+    full: true
+  }));
+  sec1.appendChild(gridNomeCtr);
   body.appendChild(sec1);
 
   // Lojas
@@ -343,7 +356,25 @@ export async function abrirFormContrato(id = null, opts = {}) {
           data_decisao: new Date().toISOString().slice(0,10)
         });
       }
-      mostrarToast(id ? 'Contrato atualizado' : 'Contrato criado e PDF arquivado');
+      // Se é contrato NOVO, cria automaticamente as 10 gestões estruturais
+      let gestoesMsg = '';
+      if (!id && contrato?.id) {
+        try {
+          const { criarGestoesAutomaticas } = await import('./data-layer.js');
+          const r = await criarGestoesAutomaticas(contrato.id, {
+            data_inicio: input.data_inicio,
+            prazo_meses: input.prazo_meses,
+            meses_carencia: input.meses_carencia,
+            indice_reajuste: input.indice_reajuste,
+            tipo_garantia: input.tipo_garantia
+          });
+          if (r.qtd > 0) gestoesMsg = ' + ' + r.qtd + ' gestões automáticas';
+          else if (r.erros?.length) console.warn('Falha nas gestões automáticas:', r.erros);
+        } catch (err) {
+          console.warn('Erro ao criar gestões automáticas:', err);
+        }
+      }
+      mostrarToast((id ? 'Contrato atualizado' : 'Contrato criado e PDF arquivado') + gestoesMsg);
       await renderTudo();
     }
   });
@@ -428,6 +459,7 @@ function preencherCamposComExtracao(body, dados, picker, inquilinos) {
     const numeros = dados.lojas.map(x => Number(String(x).replace(/\D/g, ''))).filter(n => n > 0);
     picker.setSelected(numeros);
   }
+  set('nome_fantasia_contrato', dados.nome_fantasia_contrato);
   set('valor_aluguel', dados.valor_aluguel);
   set('dia_vencimento', dados.dia_vencimento);
   set('meses_carencia', dados.meses_carencia);

@@ -237,7 +237,7 @@ async function renderTabelaOcupadas(contratos, lojas, receitaConsol) {
     tr.innerHTML = `
       <td><strong>${(c.lojas||[]).join(', ')}</strong><br>${status}</td>
       <td>
-        <strong>${c.nome_fantasia || c.razao_social}</strong><br>
+        <strong>${c.nome_fantasia_contrato || c.nome_fantasia || c.razao_social}</strong><br>
         <span style="font-size:11px;color:var(--ink-soft)">${c.razao_social}<br>CNPJ: ${c.documento}</span>
       </td>
       <td style="font-size:12px"><strong>${areaTotalPriv > 0 ? areaTotalPriv.toFixed(2).replace('.', ',') + ' m²' : '—'}</strong>${rsm ? '<br><span style="color:var(--ink-soft);font-size:11px">R$ ' + rsm.toFixed(2).replace('.',',') + '/m²</span>' : ''}${areaDetalhe}</td>
@@ -537,7 +537,7 @@ function renderTimeline(contratos) {
     const cor = d.c.parcial ? 'violet' : (d.c.prazo_meses >= 120 ? 'amber' : '');
     const row = el('div', { className: 'timeline-row' });
     row.innerHTML = `
-      <div class="timeline-name">${d.c.nome_fantasia || d.c.razao_social}<br>
+      <div class="timeline-name">${d.c.nome_fantasia_contrato || d.c.nome_fantasia || d.c.razao_social}<br>
         <span style="font-weight:400;font-size:11px;color:var(--ink-soft)">Loja ${(d.c.lojas||[]).join(', ')}</span>
       </div>
       <div class="timeline-bar">
@@ -584,7 +584,7 @@ function renderTabelaVencimentos(contratos) {
               : 'color:var(--ink-soft)';
     return `
       <tr>
-        <td><strong>${d.c.nome_fantasia || d.c.razao_social}</strong></td>
+        <td><strong>${d.c.nome_fantasia_contrato || d.c.nome_fantasia || d.c.razao_social}</strong></td>
         <td>${(d.c.lojas||[]).join(', ')}</td>
         <td>${d.c.data_assinatura}</td>
         <td>${d.c.data_inicio}</td>
@@ -1305,7 +1305,7 @@ function renderAcompanhamentoLocacao(lojas, contratos, propostas, inquilinos) {
         const areaContrato = somarAreas(c.lojas);
         valorMes = v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
         valorM2 = areaContrato > 0 ? (v / areaContrato).toFixed(0) : '—';
-        nome = c.nome_fantasia || c.razao_social || '?';
+        nome = c.nome_fantasia_contrato || c.nome_fantasia || c.razao_social || '?';
       } else if (p) {
         cor = '#854F0B'; bg = '';
         const v = Number(p.valor_aluguel || 0);
