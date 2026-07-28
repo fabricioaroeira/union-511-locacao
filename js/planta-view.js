@@ -26,8 +26,17 @@ function carregarCoords() {
   } catch (e) {}
   return { ...PLANTA_COORDS };
 }
+let _saveDbTimer = null;
 function salvarCoords(coords) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(coords)); } catch (e) {}
+  // Grava no banco com debounce (1,5s após o último ajuste) — persiste entre navegadores/dispositivos
+  clearTimeout(_saveDbTimer);
+  _saveDbTimer = setTimeout(async () => {
+    try {
+      const { saveAppConfig } = await import('./data-layer.js');
+      await saveAppConfig('planta_coords', coords);
+    } catch (e) { console.warn('planta: falha ao salvar coords no banco', e); }
+  }, 1500);
 }
 
 let coordsAtuais = carregarCoords();
@@ -37,7 +46,38 @@ let lojaSelecionadaEdicao = null;
 // =====================================================================
 // Render principal
 // =====================================================================
+let _dbCoordsCarregadas = false;
+let _ultimosArgsPlanta = null;
+
+// Busca coordenadas no banco (app_config). Se banco vazio, semeia com o local.
+async function carregarCoordsDoBanco() {
+  try {
+    const { getAppConfig, saveAppConfig } = await import('./data-layer.js');
+    const dbCoords = await getAppConfig('planta_coords');
+    if (dbCoords && typeof dbCoords === 'object' && Object.keys(dbCoords).length > 0) {
+      // Banco tem coords → prevalece sobre localStorage
+      const merged = { ...PLANTA_COORDS };
+      for (const cod in dbCoords) {
+        const c = dbCoords[cod];
+        if (c && c.w > 0 && c.h > 0) merged[cod] = c;
+      }
+      coordsAtuais = merged;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(coordsAtuais)); } catch (e) {}
+      if (_ultimosArgsPlanta) renderPlanta(..._ultimosArgsPlanta);
+    } else {
+      // Banco vazio → semeia com o que temos localmente (localStorage ajustado ou padrão)
+      await saveAppConfig('planta_coords', coordsAtuais);
+      console.info('planta: coordenadas locais salvas no banco (seed inicial)');
+    }
+  } catch (e) { console.warn('planta: config do banco indisponível', e); }
+}
+
 export function renderPlanta(lojas, contratos, propostas) {
+  _ultimosArgsPlanta = [lojas, contratos, propostas];
+  if (!_dbCoordsCarregadas) {
+    _dbCoordsCarregadas = true;
+    carregarCoordsDoBanco();
+  }
   // Escolhe o container baseado no modo (fullscreen ou normal)
   const gridId = getState('mapaFullscreenAtivo') ? 'grid-fs' : 'grid';
   const grid = document.getElementById(gridId);
@@ -169,6 +209,11 @@ function renderToolbarEdicao(container) {
       if (!(await confirmarAcao({ titulo: 'Restaurar coordenadas', mensagem: 'Restaurar as coordenadas padrão? Vai perder os ajustes que fez.', confirmLabel: 'Restaurar', perigo: true }))) return;
       localStorage.removeItem(STORAGE_KEY);
       coordsAtuais = carregarCoords();
+      // Reset também no banco — senão as coords antigas voltariam no próximo load
+      try {
+        const { saveAppConfig } = await import('./data-layer.js');
+        await saveAppConfig('planta_coords', coordsAtuais);
+      } catch (_) {}
       const { renderTudo } = await import('./render.js');
       await renderTudo();
     });

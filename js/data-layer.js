@@ -1320,6 +1320,27 @@ export async function criarGestoesAutomaticas(contratoId, contrato) {
 }
 
 // =====================================================================
+// CONFIGURAÇÕES DO APP (chave/valor JSONB) — ex: coordenadas da planta
+// =====================================================================
+export async function getAppConfig(chave) {
+  if (MOCK_MODE) return null;
+  try {
+    const supa = await getSupabase();
+    const { data, error } = await supa.from('app_config').select('valor').eq('chave', chave).maybeSingle();
+    if (error) return null; // tabela pode não existir ainda — comporta como "sem config"
+    return data?.valor ?? null;
+  } catch (_) { return null; }
+}
+
+export async function saveAppConfig(chave, valor) {
+  if (MOCK_MODE) return;
+  const supa = await getSupabase();
+  const { error } = await supa.from('app_config')
+    .upsert({ chave, valor, updated_at: new Date().toISOString() }, { onConflict: 'chave' });
+  if (error) throw new Error('Erro ao salvar config: ' + error.message);
+}
+
+// =====================================================================
 // ADMINISTRAÇÃO DE USUÁRIOS (papéis) — apenas admin
 // =====================================================================
 
