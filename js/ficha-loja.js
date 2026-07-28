@@ -687,7 +687,12 @@ function montarFormDados(c, inquilinos, lojasStatus) {
 
       await saveContrato(input);
       mostrarToast('Alterações salvas com sucesso', 'success');
-      // Recarrega a ficha pra refletir os novos dados (header + abas)
+      // Recarrega a ficha (header + abas) E o dashboard inteiro (Acompanhamento, mapa, tabelas)
+      // — garante que campos como nome_fantasia_contrato reflitam em TODAS as telas.
+      try {
+        const { renderTudo } = await import('./render.js');
+        await renderTudo();
+      } catch (_) { /* se falhar, cai no renderFicha */ }
       renderFicha();
     } catch (err) {
       mostrarToast('Erro: ' + err.message, 'error');
