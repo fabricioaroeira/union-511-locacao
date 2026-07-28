@@ -663,6 +663,7 @@ function montarFormDados(c, inquilinos, lojasStatus) {
       const input = {
         id: c.id,
         inquilino_id: fd.get('inquilino_id'),
+        nome_fantasia_contrato: (fd.get('nome_fantasia_contrato') || '').trim() || null,
         valor_aluguel: Number(fd.get('valor_aluguel')),
         dia_vencimento: Number(fd.get('dia_vencimento')),
         meses_carencia: Number(fd.get('meses_carencia')),
