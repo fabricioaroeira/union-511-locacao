@@ -22,7 +22,7 @@ export async function abrirFormInquilino(id = null) {
   }));
   grid1.appendChild(campo({ name:'documento', label:'CNPJ / CPF', type:'text', value:dados.documento, required:true, placeholder:'00.000.000/0000-00 ou 000.000.000-00' }));
   grid1.appendChild(campo({ name:'razao_social', label:'Razão social / Nome completo', type:'text', value:dados.razao_social, required:true, full:true }));
-  grid1.appendChild(campo({ name:'nome_fantasia', label:'Nome fantasia (opcional)', type:'text', value:dados.nome_fantasia, full:true }));
+  grid1.appendChild(campo({ name:'nome_fantasia', label:'Nome fantasia padrão (usado se o contrato não definir)', type:'text', value:dados.nome_fantasia, full:true }));
   grid1.appendChild(campo({ name:'segmento', label:'Segmento', type:'text', value:dados.segmento, placeholder:'Ex: Farmácia, Estética, Vestuário' }));
   grid1.appendChild(campo({ name:'email', label:'Email', type:'email', value:dados.email }));
   grid1.appendChild(campo({ name:'telefone', label:'Telefone', type:'text', value:dados.telefone }));

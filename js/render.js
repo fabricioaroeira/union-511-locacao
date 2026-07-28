@@ -177,7 +177,7 @@ function renderMix(contratos, inquilinos) {
   const sorted = [...contratos].sort((a,b) => Number(a.lojas?.[0]||0) - Number(b.lojas?.[0]||0));
   document.getElementById('tbl-mix').innerHTML = sorted.map(c => {
     const inq = inquilinos.find(i => i.id === c.inquilino_id) || {};
-    return `<tr><td>${inq.segmento || '—'}</td><td>${inq.razao_social || '—'}</td><td>${inq.nome_fantasia || '—'}</td><td>${(c.lojas||[]).join(', ')}</td></tr>`;
+    return `<tr><td>${inq.segmento || '—'}</td><td>${inq.razao_social || '—'}</td><td>${c.nome_fantasia_contrato || inq.nome_fantasia || '—'}</td><td>${(c.lojas||[]).join(', ')}</td></tr>`;
   }).join('');
 }
 
