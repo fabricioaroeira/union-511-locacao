@@ -84,12 +84,13 @@ function renderCounters(kpis, propostas, leads = []) {
 // KPIs
 // ---------------------------------------------------------------------
 function renderKpis(k, receitaConsol, lojas = []) {
-  // % de área locada: m² privativos das lojas ocupadas ÷ m² privativos das locáveis
+  // % de área locada (ABL/GLA): m² das lojas ocupadas ÷ m² de TODAS as lojas
+  // (inclui as 4 de uso interno da JAX — podem ser liberadas pra locação no futuro)
   const areaLocada = lojas.filter(l => l.status === 'ocupada')
     .reduce((s, l) => s + (Number(l.area_privativa) || 0), 0);
-  const areaLocavel = lojas.filter(l => l.status !== 'uso_interno' && !l.uso_interno)
+  const areaTotalEmp = lojas
     .reduce((s, l) => s + (Number(l.area_privativa) || 0), 0);
-  const pctArea = areaLocavel > 0 ? (areaLocada / areaLocavel * 100) : 0;
+  const pctArea = areaTotalEmp > 0 ? (areaLocada / areaTotalEmp * 100) : 0;
   const fmtM2 = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
   const disp = k.lojas_locaveis - k.lojas_ocupadas;
   const pctOcup = (k.lojas_ocupadas / k.lojas_locaveis * 100);
@@ -122,9 +123,9 @@ function renderKpis(k, receitaConsol, lojas = []) {
       <div class="kpi-sub">de ${k.lojas_locaveis} locáveis (${k.lojas_internas} em uso interno)</div>
     </div>
     <div class="kpi green">
-      <div class="kpi-label">Área locada</div>
+      <div class="kpi-label">Área locada (ABL)</div>
       <div class="kpi-value">${formatPercent(pctArea)}</div>
-      <div class="kpi-sub">${fmtM2(areaLocada)} m² de ${fmtM2(areaLocavel)} m² locáveis</div>
+      <div class="kpi-sub">${fmtM2(areaLocada)} m² de ${fmtM2(areaTotalEmp)} m² totais</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Inquilinos ativos</div>
