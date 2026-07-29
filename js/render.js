@@ -51,7 +51,7 @@ export async function renderTudo() {
   const propostas = propostasAtivas; // alias pra renders que usam propostas ativas
   const safe = (fn, nome) => { try { return fn(); } catch (e) { console.error('render error em ' + nome + ':', e); } };
   safe(() => renderBannerAlertas(contratos, propostas, leads, gestoes), 'renderBannerAlertas');
-  safe(() => renderKpis(kpis, receitaConsol), 'renderKpis');
+  safe(() => renderKpis(kpis, receitaConsol, lojas), 'renderKpis');
   safe(() => renderFunilComercial(leads, propostas, contratos), 'renderFunilComercial');
   safe(() => renderPlanta(lojas, contratos, propostas), 'renderPlanta');
   safe(() => renderLegenda(kpis, propostas), 'renderLegenda');
@@ -83,7 +83,14 @@ function renderCounters(kpis, propostas, leads = []) {
 // ---------------------------------------------------------------------
 // KPIs
 // ---------------------------------------------------------------------
-function renderKpis(k, receitaConsol) {
+function renderKpis(k, receitaConsol, lojas = []) {
+  // % de área locada: m² privativos das lojas ocupadas ÷ m² privativos das locáveis
+  const areaLocada = lojas.filter(l => l.status === 'ocupada')
+    .reduce((s, l) => s + (Number(l.area_privativa) || 0), 0);
+  const areaLocavel = lojas.filter(l => l.status !== 'uso_interno' && !l.uso_interno)
+    .reduce((s, l) => s + (Number(l.area_privativa) || 0), 0);
+  const pctArea = areaLocavel > 0 ? (areaLocada / areaLocavel * 100) : 0;
+  const fmtM2 = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
   const disp = k.lojas_locaveis - k.lojas_ocupadas;
   const pctOcup = (k.lojas_ocupadas / k.lojas_locaveis * 100);
   const pctDisp = (disp / k.lojas_locaveis * 100);
@@ -113,6 +120,11 @@ function renderKpis(k, receitaConsol) {
       <div class="kpi-label">Disponíveis</div>
       <div class="kpi-value">${disp}</div>
       <div class="kpi-sub">de ${k.lojas_locaveis} locáveis (${k.lojas_internas} em uso interno)</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-label">Área locada</div>
+      <div class="kpi-value">${formatPercent(pctArea)}</div>
+      <div class="kpi-sub">${fmtM2(areaLocada)} m² de ${fmtM2(areaLocavel)} m² locáveis</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Inquilinos ativos</div>

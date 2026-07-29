@@ -60,7 +60,7 @@ h1{font-size:18px;font-weight:300;letter-spacing:0.18em;text-transform:uppercase
 .user-menu #btn-admin:hover{background:var(--accent);color:#fff}
 
 /* KPIs */
-.kpis{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:20px}
+.kpis{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:20px}
 .kpi{background:var(--card);padding:16px;border-radius:10px;border:1px solid var(--line)}
 .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);font-weight:500}
 .kpi-value{font-size:22px;font-weight:700;margin-top:6px;letter-spacing:-0.02em}
