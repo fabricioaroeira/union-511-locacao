@@ -125,7 +125,7 @@ function renderKpis(k, receitaConsol, lojas = []) {
     <div class="kpi green">
       <div class="kpi-label">Área locada (ABL)</div>
       <div class="kpi-value">${formatPercent(pctArea)}</div>
-      <div class="kpi-sub">${fmtM2(areaLocada)} m² de ${fmtM2(areaTotalEmp)} m² totais</div>
+      <div class="kpi-sub">${fmtM2(areaLocada)} m² de ${fmtM2(areaTotalEmp)} m² (todas as ${k.total_lojas} lojas)</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Inquilinos ativos</div>
