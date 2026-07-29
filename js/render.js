@@ -115,12 +115,12 @@ function renderKpis(k, receitaConsol, lojas = []) {
     <div class="kpi green">
       <div class="kpi-label">Ocupadas</div>
       <div class="kpi-value">${k.lojas_ocupadas}</div>
-      <div class="kpi-sub">${formatPercent(pctOcup)} de ${k.lojas_locaveis} locáveis</div>
+      <div class="kpi-sub">${formatPercent(pctOcup)} de ${k.lojas_locaveis} locáveis (${k.lojas_internas} em uso JAX)</div>
     </div>
     <div class="kpi amber">
       <div class="kpi-label">Disponíveis</div>
       <div class="kpi-value">${disp}</div>
-      <div class="kpi-sub">de ${k.lojas_locaveis} locáveis (${k.lojas_internas} em uso interno)</div>
+      <div class="kpi-sub">de ${k.lojas_locaveis} locáveis (${k.lojas_internas} em uso JAX)</div>
     </div>
     <div class="kpi green">
       <div class="kpi-label">Área locada (ABL)</div>
