@@ -1,0 +1,1443 @@
+-- ===== ARQUIVO: SQL_RLS_HARDENING.sql =====
+-- =====================================================================
+-- UNION 511 — RLS HARDENING (created_by + políticas por usuário)
+-- =====================================================================
+-- Data: 2026-06-13
+-- Decisão da auditoria: substituir USING (true) por políticas que olham
+-- created_by = auth.uid(). Admin (na tabela app_admins) vê tudo.
+--
+-- IDEMPOTENTE: pode rodar várias vezes sem quebrar. Usa IF NOT EXISTS,
+-- DROP POLICY IF EXISTS, CREATE OR REPLACE FUNCTION.
+--
+-- IMPORTANTE: roda como o usuário admin do Supabase no painel SQL Editor.
+-- Não roda parcialmente — se algo der erro, ROLLBACK e pede ajuda.
+-- =====================================================================
+
+-- =====================================================================
+-- 0) Tabela de admins (quem vê/edita tudo, ignorando created_by)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS app_admins (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- RLS na própria tabela app_admins:
+--   - SELECT: só admin vê quem é admin (evita enumeração)
+--   - INSERT/UPDATE/DELETE: BLOQUEADO no role authenticated.
+--     A função is_app_admin() usa SECURITY DEFINER e contorna RLS,
+--     então a checagem de admin continua funcionando.
+--     Pra adicionar/remover admins use o painel SQL Editor (postgres role).
+ALTER TABLE app_admins ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS app_admins_self_read ON app_admins;
+DROP POLICY IF EXISTS app_admins_admin_read ON app_admins;
+CREATE POLICY app_admins_admin_read ON app_admins FOR SELECT TO authenticated
+  USING (user_id = auth.uid());
+-- nenhuma policy de INSERT/UPDATE/DELETE = ninguém autenticado escreve
+
+-- Insere o Fabricio como admin (busca pelo email) — esta query roda como postgres (bypass RLS)
+INSERT INTO app_admins (user_id)
+SELECT id FROM auth.users WHERE email = 'fabricio@apexengenharia.com.br'
+ON CONFLICT (user_id) DO NOTHING;
+
+-- =====================================================================
+-- 1) Função helper: é admin?
+-- =====================================================================
+CREATE OR REPLACE FUNCTION is_app_admin() RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM app_admins WHERE user_id = auth.uid());
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- =====================================================================
+-- 2) Helper macro mental: "owns or is admin"
+-- Usado em policies como: USING ( is_app_admin() OR created_by = auth.uid() )
+-- =====================================================================
+
+-- =====================================================================
+-- 3) Adiciona created_by em TODAS as tabelas raíz
+-- =====================================================================
+
+-- Lista de tabelas raíz (com dados pessoais/operacionais)
+DO $$
+DECLARE
+  tbl text;
+  tbls text[] := ARRAY[
+    'inquilinos','contratos','propostas','leads',
+    'aditivos','arquivos','documentos_contrato',
+    'fornecedores','despesas','reajustes','descontos_suspensos',
+    'alertas_acoes','config_alertas',
+    'cobrancas'
+  ];
+BEGIN
+  FOREACH tbl IN ARRAY tbls LOOP
+    -- Confere se tabela existe antes
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = tbl AND table_schema = 'public') THEN
+      EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL', tbl);
+      RAISE NOTICE 'created_by adicionado em %', tbl;
+    ELSE
+      RAISE NOTICE 'TABELA % não existe, pulando', tbl;
+    END IF;
+  END LOOP;
+END $$;
+
+-- =====================================================================
+-- 4) Popula created_by dos registros existentes com o UUID do Fabricio
+-- (todos os dados atuais foram criados por ele)
+-- =====================================================================
+DO $$
+DECLARE
+  fab_uuid uuid;
+  tbl text;
+  tbls text[] := ARRAY[
+    'inquilinos','contratos','propostas','leads',
+    'aditivos','arquivos','documentos_contrato',
+    'fornecedores','despesas','reajustes','descontos_suspensos',
+    'alertas_acoes','config_alertas',
+    'cobrancas'
+  ];
+BEGIN
+  SELECT id INTO fab_uuid FROM auth.users WHERE email = 'fabricio@apexengenharia.com.br';
+  IF fab_uuid IS NULL THEN
+    RAISE EXCEPTION 'Usuário fabricio@apexengenharia.com.br não encontrado em auth.users — abortando';
+  END IF;
+  RAISE NOTICE 'Backfill com user_id = %', fab_uuid;
+
+  FOREACH tbl IN ARRAY tbls LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = tbl AND table_schema = 'public') THEN
+      EXECUTE format('UPDATE %I SET created_by = $1 WHERE created_by IS NULL', tbl) USING fab_uuid;
+    END IF;
+  END LOOP;
+END $$;
+
+-- =====================================================================
+-- 5) Trigger BEFORE INSERT pra autopreencher created_by
+-- =====================================================================
+CREATE OR REPLACE FUNCTION set_created_by() RETURNS trigger AS $$
+BEGIN
+  IF NEW.created_by IS NULL THEN
+    NEW.created_by := auth.uid();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Anexa o trigger em cada tabela
+DO $$
+DECLARE
+  tbl text;
+  tbls text[] := ARRAY[
+    'inquilinos','contratos','propostas','leads',
+    'aditivos','arquivos','documentos_contrato',
+    'fornecedores','despesas','reajustes','descontos_suspensos',
+    'alertas_acoes','config_alertas',
+    'cobrancas'
+  ];
+BEGIN
+  FOREACH tbl IN ARRAY tbls LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = tbl AND table_schema = 'public') THEN
+      EXECUTE format('DROP TRIGGER IF EXISTS trg_set_created_by ON %I', tbl);
+      EXECUTE format('CREATE TRIGGER trg_set_created_by BEFORE INSERT ON %I FOR EACH ROW EXECUTE FUNCTION set_created_by()', tbl);
+    END IF;
+  END LOOP;
+END $$;
+
+-- =====================================================================
+-- 6) RLS POLICIES — tabelas raíz
+-- =====================================================================
+-- Padrão pra cada uma:
+--   DROP POLICY IF EXISTS qualquer-policy-antiga;
+--   ALTER TABLE ... ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY ... USING (is_app_admin() OR created_by = auth.uid())
+--                     WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- Pra não repetir, vou usar uma function que gera os comandos
+
+-- 6.1 INQUILINOS
+ALTER TABLE inquilinos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "inquilinos_read" ON inquilinos;
+DROP POLICY IF EXISTS "inquilinos_write" ON inquilinos;
+DROP POLICY IF EXISTS inquilinos_auth_all ON inquilinos;
+CREATE POLICY inquilinos_own ON inquilinos FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.2 CONTRATOS
+ALTER TABLE contratos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "contratos_read" ON contratos;
+DROP POLICY IF EXISTS "contratos_write" ON contratos;
+DROP POLICY IF EXISTS contratos_auth_all ON contratos;
+CREATE POLICY contratos_own ON contratos FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.3 PROPOSTAS
+ALTER TABLE propostas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "propostas_read" ON propostas;
+DROP POLICY IF EXISTS "propostas_write" ON propostas;
+DROP POLICY IF EXISTS propostas_auth_all ON propostas;
+CREATE POLICY propostas_own ON propostas FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.4 LEADS
+ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "leads_authenticated_all" ON leads;
+DROP POLICY IF EXISTS leads_authenticated_all ON leads;
+CREATE POLICY leads_own ON leads FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.5 ADITIVOS (se existir)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'aditivos' AND table_schema = 'public') THEN
+    EXECUTE 'ALTER TABLE aditivos ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "aditivos_read" ON aditivos';
+    EXECUTE 'DROP POLICY IF EXISTS "aditivos_write" ON aditivos';
+    EXECUTE 'CREATE POLICY aditivos_own ON aditivos FOR ALL TO authenticated USING (is_app_admin() OR created_by = auth.uid()) WITH CHECK (is_app_admin() OR created_by = auth.uid())';
+  END IF;
+END $$;
+
+-- 6.6 ARQUIVOS (todos os uploads de Storage; vincula a entidade via entidade_tipo+entidade_id)
+ALTER TABLE arquivos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "arquivos_read" ON arquivos;
+DROP POLICY IF EXISTS "arquivos_write" ON arquivos;
+CREATE POLICY arquivos_own ON arquivos FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.7 DOCUMENTOS_CONTRATO
+ALTER TABLE documentos_contrato ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS doc_auth_all ON documentos_contrato;
+CREATE POLICY documentos_contrato_own ON documentos_contrato FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.8 FORNECEDORES
+ALTER TABLE fornecedores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "fornecedores_auth_all" ON fornecedores;
+CREATE POLICY fornecedores_own ON fornecedores FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.9 DESPESAS
+ALTER TABLE despesas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "despesas_auth_all" ON despesas;
+CREATE POLICY despesas_own ON despesas FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.10 REAJUSTES
+ALTER TABLE reajustes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "reajustes_auth_all" ON reajustes;
+CREATE POLICY reajustes_own ON reajustes FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.11 DESCONTOS_SUSPENSOS
+ALTER TABLE descontos_suspensos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "descontos_susp_auth_all" ON descontos_suspensos;
+CREATE POLICY descontos_suspensos_own ON descontos_suspensos FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.12 COBRANCAS
+ALTER TABLE cobrancas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cobrancas_auth_all" ON cobrancas;
+CREATE POLICY cobrancas_own ON cobrancas FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.13 ALERTAS_ACOES
+ALTER TABLE alertas_acoes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS alerta_auth_all ON alertas_acoes;
+CREATE POLICY alertas_acoes_own ON alertas_acoes FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- 6.14 CONFIG_ALERTAS
+ALTER TABLE config_alertas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cfg_alerta_auth_all ON config_alertas;
+CREATE POLICY config_alertas_own ON config_alertas FOR ALL TO authenticated
+  USING (is_app_admin() OR created_by = auth.uid())
+  WITH CHECK (is_app_admin() OR created_by = auth.uid());
+
+-- =====================================================================
+-- 7) RLS POLICIES — tabelas filhas (n:n e dependentes)
+-- Validação via JOIN com a tabela pai
+-- =====================================================================
+
+-- 7.1 CONTRATO_LOJAS → contratos
+ALTER TABLE contrato_lojas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "contrato_lojas_read" ON contrato_lojas;
+DROP POLICY IF EXISTS "contrato_lojas_write" ON contrato_lojas;
+CREATE POLICY contrato_lojas_via_pai ON contrato_lojas FOR ALL TO authenticated
+  USING (
+    is_app_admin() OR EXISTS (
+      SELECT 1 FROM contratos c WHERE c.id = contrato_lojas.contrato_id AND c.created_by = auth.uid()
+    )
+  )
+  WITH CHECK (
+    is_app_admin() OR EXISTS (
+      SELECT 1 FROM contratos c WHERE c.id = contrato_lojas.contrato_id AND c.created_by = auth.uid()
+    )
+  );
+
+-- 7.2 PROPOSTA_LOJAS → propostas
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'proposta_lojas' AND table_schema = 'public') THEN
+    EXECUTE 'ALTER TABLE proposta_lojas ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "proposta_lojas_read" ON proposta_lojas';
+    EXECUTE 'DROP POLICY IF EXISTS "proposta_lojas_write" ON proposta_lojas';
+    EXECUTE 'CREATE POLICY proposta_lojas_via_pai ON proposta_lojas FOR ALL TO authenticated '
+         || 'USING (is_app_admin() OR EXISTS (SELECT 1 FROM propostas p WHERE p.id = proposta_lojas.proposta_id AND p.created_by = auth.uid())) '
+         || 'WITH CHECK (is_app_admin() OR EXISTS (SELECT 1 FROM propostas p WHERE p.id = proposta_lojas.proposta_id AND p.created_by = auth.uid()))';
+  END IF;
+END $$;
+
+-- 7.3 LEAD_LOJAS → leads
+ALTER TABLE lead_lojas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "lead_lojas_authenticated_all" ON lead_lojas;
+CREATE POLICY lead_lojas_via_pai ON lead_lojas FOR ALL TO authenticated
+  USING (
+    is_app_admin() OR EXISTS (
+      SELECT 1 FROM leads l WHERE l.id = lead_lojas.lead_id AND l.created_by = auth.uid()
+    )
+  )
+  WITH CHECK (
+    is_app_admin() OR EXISTS (
+      SELECT 1 FROM leads l WHERE l.id = lead_lojas.lead_id AND l.created_by = auth.uid()
+    )
+  );
+
+-- 7.4 LEAD_INTERACOES → leads
+ALTER TABLE lead_interacoes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "lead_interacoes_authenticated_all" ON lead_interacoes;
+CREATE POLICY lead_interacoes_via_pai ON lead_interacoes FOR ALL TO authenticated
+  USING (
+    is_app_admin() OR EXISTS (
+      SELECT 1 FROM leads l WHERE l.id = lead_interacoes.lead_id AND l.created_by = auth.uid()
+    )
+  )
+  WITH CHECK (
+    is_app_admin() OR EXISTS (
+      SELECT 1 FROM leads l WHERE l.id = lead_interacoes.lead_id AND l.created_by = auth.uid()
+    )
+  );
+
+-- =====================================================================
+-- 8) RLS POLICIES — tabelas COMPARTILHADAS
+-- (cadastros estáveis — todo mundo lê, só admin edita)
+-- =====================================================================
+
+-- 8.1 LOJAS (52 lojas físicas — todos veem, só admin edita)
+ALTER TABLE lojas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "lojas_read" ON lojas;
+DROP POLICY IF EXISTS "lojas_write" ON lojas;
+DROP POLICY IF EXISTS "lojas_update_authenticated" ON lojas;
+CREATE POLICY lojas_read_all ON lojas FOR SELECT TO authenticated USING (true);
+CREATE POLICY lojas_write_admin ON lojas FOR ALL TO authenticated
+  USING (is_app_admin())
+  WITH CHECK (is_app_admin());
+
+-- 8.2 VAGAS
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vagas' AND table_schema = 'public') THEN
+    EXECUTE 'ALTER TABLE vagas ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "vagas_read" ON vagas';
+    EXECUTE 'DROP POLICY IF EXISTS "vagas_write" ON vagas';
+    EXECUTE 'CREATE POLICY vagas_read_all ON vagas FOR SELECT TO authenticated USING (true)';
+    EXECUTE 'CREATE POLICY vagas_write_admin ON vagas FOR ALL TO authenticated USING (is_app_admin()) WITH CHECK (is_app_admin())';
+  END IF;
+END $$;
+
+-- 8.3 FERIADOS, INDICES_ECONOMICOS — leitura aberta
+ALTER TABLE feriados ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "feriados_auth_read" ON feriados;
+CREATE POLICY feriados_read_all ON feriados FOR SELECT TO authenticated USING (true);
+CREATE POLICY feriados_write_admin ON feriados FOR ALL TO authenticated
+  USING (is_app_admin()) WITH CHECK (is_app_admin());
+
+ALTER TABLE indices_economicos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "indices_auth_all" ON indices_economicos;
+CREATE POLICY indices_read_all ON indices_economicos FOR SELECT TO authenticated USING (true);
+CREATE POLICY indices_write_admin ON indices_economicos FOR ALL TO authenticated
+  USING (is_app_admin()) WITH CHECK (is_app_admin());
+
+-- =====================================================================
+-- 9) VALIDAÇÃO FINAL — confere que ninguém ficou USING (true) por engano
+-- =====================================================================
+DO $$
+DECLARE
+  rec record;
+  count_inseguro int := 0;
+BEGIN
+  RAISE NOTICE '=== Conferência: policies que ainda usam USING (true) ===';
+  FOR rec IN
+    SELECT schemaname, tablename, policyname, qual
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND qual = 'true'
+      AND tablename NOT IN ('lojas','vagas','feriados','indices_economicos')
+  LOOP
+    RAISE NOTICE 'INSEGURA: %.% policy %', rec.schemaname, rec.tablename, rec.policyname;
+    count_inseguro := count_inseguro + 1;
+  END LOOP;
+  IF count_inseguro = 0 THEN
+    RAISE NOTICE '✓ Nenhuma policy insegura encontrada';
+  ELSE
+    RAISE WARNING '⚠ % policies inseguras restantes — revisar', count_inseguro;
+  END IF;
+END $$;
+
+-- =====================================================================
+-- SMOKE TEST (rodar SEPARADAMENTE depois pra confirmar)
+-- =====================================================================
+-- SELECT count(*) FROM contratos;     -- deve voltar a contagem normal (você é admin)
+-- SELECT count(*) FROM propostas;     -- idem
+-- SELECT count(*) FROM leads;         -- idem
+-- SELECT is_app_admin();              -- deve voltar TRUE pra você
+-- SELECT * FROM app_admins;           -- deve ter seu user_id
+
+
+-- ===== ARQUIVO: SQL_PAPEIS.sql =====
+-- =====================================================================
+-- UNION 511 — Tabela de PERFIS e papéis (4 níveis)
+-- =====================================================================
+-- Roda DEPOIS do SQL_RLS_HARDENING (que já criou app_admins, created_by, etc.)
+-- IDEMPOTENTE.
+--
+-- Papéis:
+--   admin        → vê/edita tudo, inclusive deletar contratos
+--   gestor       → CRUD em tudo, exceto DELETE em contratos vigentes
+--   corretor     → SELECT em tudo (lojas/inquilinos/contratos pra contexto);
+--                  INSERT/UPDATE só em propostas e leads PRÓPRIOS;
+--                  KPIs financeiros são escondidos no frontend.
+--   visualizador → só SELECT em tudo
+--
+-- Como funciona:
+--   - Tabela `perfis` (1 linha por user_id em auth.users)
+--   - Trigger AFTER INSERT em auth.users cria perfil com role='visualizador'
+--   - Helpers: user_role(), is_admin(), can_write_all(), can_write_own()
+--   - Policies reescritas pra olhar o papel
+-- =====================================================================
+
+-- =====================================================================
+-- 1) Tabela perfis (cria ou MIGRA — versão antiga usava coluna "papel")
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS perfis (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role text NOT NULL DEFAULT 'visualizador',
+  nome text,
+  ativo boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Se a tabela já existia com coluna "papel" (schema antigo), renomeia pra "role"
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='perfis' AND table_schema='public' AND column_name='papel')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='perfis' AND table_schema='public' AND column_name='role') THEN
+    ALTER TABLE perfis RENAME COLUMN papel TO role;
+    RAISE NOTICE 'Coluna papel renomeada para role';
+  END IF;
+END $$;
+
+-- Garante que todas as colunas existem (idempotente)
+ALTER TABLE perfis ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'visualizador';
+ALTER TABLE perfis ADD COLUMN IF NOT EXISTS nome text;
+ALTER TABLE perfis ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true;
+ALTER TABLE perfis ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE perfis ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+-- Normaliza papéis antigos (se houver) — o schema antigo usava: admin/gestor/corretor/visualizador
+-- (esses já casam com o novo). Se algum NULL escapou, default = visualizador.
+UPDATE perfis SET role = 'visualizador' WHERE role IS NULL;
+
+-- (Re)cria check constraint
+DO $$ BEGIN
+  ALTER TABLE perfis DROP CONSTRAINT IF EXISTS perfis_papel_check;
+  ALTER TABLE perfis DROP CONSTRAINT IF EXISTS perfis_role_check;
+  ALTER TABLE perfis ADD CONSTRAINT perfis_role_check
+    CHECK (role IN ('admin','gestor','corretor','visualizador'));
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_perfis_role ON perfis(role);
+
+-- RLS na própria perfis:
+--   SELECT: usuário vê o próprio perfil; admin vê todos
+--   UPDATE: admin atualiza qualquer perfil (mudar role / ativar / desativar)
+--   INSERT/DELETE: só via trigger ou pelo painel (postgres role)
+ALTER TABLE perfis ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS perfis_read_self ON perfis;
+DROP POLICY IF EXISTS perfis_read_admin ON perfis;
+DROP POLICY IF EXISTS perfis_update_admin ON perfis;
+CREATE POLICY perfis_read_self ON perfis FOR SELECT TO authenticated
+  USING (user_id = auth.uid());
+CREATE POLICY perfis_read_admin ON perfis FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM perfis p2 WHERE p2.user_id = auth.uid() AND p2.role = 'admin'));
+CREATE POLICY perfis_update_admin ON perfis FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM perfis p2 WHERE p2.user_id = auth.uid() AND p2.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM perfis p2 WHERE p2.user_id = auth.uid() AND p2.role = 'admin'));
+
+-- =====================================================================
+-- 2) Backfill: cria perfil pra todos os usuários existentes
+--    - Fabricio fica como 'admin'
+--    - Demais ficam como 'visualizador' (você ajusta depois pelo app)
+-- =====================================================================
+INSERT INTO perfis (user_id, role, nome)
+SELECT
+  u.id,
+  CASE WHEN u.email = 'fabricio@apexengenharia.com.br' THEN 'admin' ELSE 'visualizador' END,
+  COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1))
+FROM auth.users u
+ON CONFLICT (user_id) DO NOTHING;
+
+-- Sincroniza app_admins (de SQL_RLS_HARDENING) com perfis.admin
+-- (qualquer um que esteja em app_admins é promovido a admin em perfis)
+UPDATE perfis SET role = 'admin'
+WHERE user_id IN (SELECT user_id FROM app_admins)
+  AND role != 'admin';
+
+-- =====================================================================
+-- 3) Trigger: ao criar novo usuário em auth.users, cria perfil default
+-- =====================================================================
+CREATE OR REPLACE FUNCTION criar_perfil_default() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  INSERT INTO public.perfis (user_id, role, nome)
+  VALUES (
+    NEW.id,
+    'visualizador',
+    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1))
+  )
+  ON CONFLICT (user_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_perfil_default ON auth.users;
+CREATE TRIGGER trg_perfil_default
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION criar_perfil_default();
+
+-- Trigger pra atualizar updated_at em perfis
+CREATE OR REPLACE FUNCTION perfis_set_updated_at() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at := now(); RETURN NEW; END;
+$$;
+DROP TRIGGER IF EXISTS trg_perfis_updated_at ON perfis;
+CREATE TRIGGER trg_perfis_updated_at
+  BEFORE UPDATE ON perfis
+  FOR EACH ROW EXECUTE FUNCTION perfis_set_updated_at();
+
+-- =====================================================================
+-- 4) Funções helper
+-- =====================================================================
+
+-- Remove funções antigas do schema 05-rls-policies.sql (referenciavam coluna 'papel')
+DROP FUNCTION IF EXISTS user_papel() CASCADE;
+DROP FUNCTION IF EXISTS is_gestor_or_admin() CASCADE;
+DROP FUNCTION IF EXISTS is_authenticated_active() CASCADE;
+
+-- Papel do usuário atual
+CREATE OR REPLACE FUNCTION user_role() RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT role FROM perfis WHERE user_id = auth.uid() AND ativo = true LIMIT 1;
+$$;
+
+-- É admin? (também atualiza is_app_admin pra continuar funcionando)
+CREATE OR REPLACE FUNCTION is_admin() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (SELECT 1 FROM perfis WHERE user_id = auth.uid() AND role = 'admin' AND ativo = true);
+$$;
+
+-- Substitui is_app_admin() (compatibilidade com SQL_RLS_HARDENING)
+CREATE OR REPLACE FUNCTION is_app_admin() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT is_admin();
+$$;
+
+-- Pode escrever TUDO (admin ou gestor)
+CREATE OR REPLACE FUNCTION can_write_all() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT user_role() IN ('admin','gestor');
+$$;
+
+-- Pode escrever PRÓPRIOS recursos (propostas, leads) — admin, gestor ou corretor
+CREATE OR REPLACE FUNCTION can_write_own() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT user_role() IN ('admin','gestor','corretor');
+$$;
+
+-- Pode ler? (qualquer um com perfil ativo: admin/gestor/corretor/visualizador)
+CREATE OR REPLACE FUNCTION can_read() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT user_role() IS NOT NULL;
+$$;
+
+-- =====================================================================
+-- 5) Reescrita das policies (substitui as do SQL_RLS_HARDENING)
+-- =====================================================================
+-- Resumo:
+--   • Cadastros (lojas, vagas, feriados, indices) → leitura por todos, escrita só admin/gestor
+--   • Tabelas operacionais "compartilhadas" (inquilinos, contratos, fornecedores, despesas, cobrancas, reajustes, etc.)
+--       → SELECT por todos (admin/gestor/corretor/visualizador veem tudo, contexto comercial)
+--       → INSERT/UPDATE/DELETE só admin/gestor
+--   • Propostas + leads (e suas tabelas filhas) → corretor pode CRUD nos próprios; admin/gestor em tudo; visualizador só lê
+--   • Tabelas filhas (contrato_lojas, lead_lojas, etc.) → seguem regra da tabela pai
+--   • Arquivos / documentos_contrato → seguem regra da tabela pai
+
+-- 5.1 INQUILINOS — operacional compartilhado
+DROP POLICY IF EXISTS inquilinos_own ON inquilinos;
+DROP POLICY IF EXISTS inquilinos_read ON inquilinos;
+DROP POLICY IF EXISTS inquilinos_write ON inquilinos;
+CREATE POLICY inquilinos_read ON inquilinos FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY inquilinos_write ON inquilinos FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.2 CONTRATOS — operacional compartilhado
+DROP POLICY IF EXISTS contratos_own ON contratos;
+DROP POLICY IF EXISTS contratos_read ON contratos;
+DROP POLICY IF EXISTS contratos_write ON contratos;
+CREATE POLICY contratos_read ON contratos FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY contratos_write ON contratos FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.3 CONTRATO_LOJAS — segue contratos
+DROP POLICY IF EXISTS contrato_lojas_via_pai ON contrato_lojas;
+CREATE POLICY contrato_lojas_read ON contrato_lojas FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY contrato_lojas_write ON contrato_lojas FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.4 PROPOSTAS — corretor edita as próprias; admin/gestor tudo
+DROP POLICY IF EXISTS propostas_own ON propostas;
+CREATE POLICY propostas_read ON propostas FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY propostas_insert ON propostas FOR INSERT TO authenticated
+  WITH CHECK (can_write_all() OR (can_write_own() AND created_by = auth.uid()));
+CREATE POLICY propostas_update ON propostas FOR UPDATE TO authenticated
+  USING (can_write_all() OR (can_write_own() AND created_by = auth.uid()))
+  WITH CHECK (can_write_all() OR (can_write_own() AND created_by = auth.uid()));
+CREATE POLICY propostas_delete ON propostas FOR DELETE TO authenticated
+  USING (can_write_all() OR (can_write_own() AND created_by = auth.uid()));
+
+-- 5.5 PROPOSTA_LOJAS — segue propostas
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'proposta_lojas' AND table_schema = 'public') THEN
+    EXECUTE 'DROP POLICY IF EXISTS proposta_lojas_via_pai ON proposta_lojas';
+    EXECUTE 'CREATE POLICY proposta_lojas_read ON proposta_lojas FOR SELECT TO authenticated USING (can_read())';
+    EXECUTE 'CREATE POLICY proposta_lojas_write ON proposta_lojas FOR ALL TO authenticated '
+         || 'USING (can_write_all() OR (can_write_own() AND EXISTS (SELECT 1 FROM propostas p WHERE p.id = proposta_lojas.proposta_id AND p.created_by = auth.uid()))) '
+         || 'WITH CHECK (can_write_all() OR (can_write_own() AND EXISTS (SELECT 1 FROM propostas p WHERE p.id = proposta_lojas.proposta_id AND p.created_by = auth.uid())))';
+  END IF;
+END $$;
+
+-- 5.6 LEADS — mesma lógica de propostas
+DROP POLICY IF EXISTS leads_own ON leads;
+CREATE POLICY leads_read ON leads FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY leads_insert ON leads FOR INSERT TO authenticated
+  WITH CHECK (can_write_all() OR (can_write_own() AND created_by = auth.uid()));
+CREATE POLICY leads_update ON leads FOR UPDATE TO authenticated
+  USING (can_write_all() OR (can_write_own() AND created_by = auth.uid()))
+  WITH CHECK (can_write_all() OR (can_write_own() AND created_by = auth.uid()));
+CREATE POLICY leads_delete ON leads FOR DELETE TO authenticated
+  USING (can_write_all() OR (can_write_own() AND created_by = auth.uid()));
+
+-- 5.7 LEAD_LOJAS — segue leads
+DROP POLICY IF EXISTS lead_lojas_via_pai ON lead_lojas;
+CREATE POLICY lead_lojas_read ON lead_lojas FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY lead_lojas_write ON lead_lojas FOR ALL TO authenticated
+  USING (can_write_all() OR (can_write_own() AND EXISTS (SELECT 1 FROM leads l WHERE l.id = lead_lojas.lead_id AND l.created_by = auth.uid())))
+  WITH CHECK (can_write_all() OR (can_write_own() AND EXISTS (SELECT 1 FROM leads l WHERE l.id = lead_lojas.lead_id AND l.created_by = auth.uid())));
+
+-- 5.8 LEAD_INTERACOES — segue leads
+DROP POLICY IF EXISTS lead_interacoes_via_pai ON lead_interacoes;
+CREATE POLICY lead_interacoes_read ON lead_interacoes FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY lead_interacoes_write ON lead_interacoes FOR ALL TO authenticated
+  USING (can_write_all() OR (can_write_own() AND EXISTS (SELECT 1 FROM leads l WHERE l.id = lead_interacoes.lead_id AND l.created_by = auth.uid())))
+  WITH CHECK (can_write_all() OR (can_write_own() AND EXISTS (SELECT 1 FROM leads l WHERE l.id = lead_interacoes.lead_id AND l.created_by = auth.uid())));
+
+-- 5.9 ADITIVOS — segue contratos
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'aditivos' AND table_schema = 'public') THEN
+    EXECUTE 'DROP POLICY IF EXISTS aditivos_own ON aditivos';
+    EXECUTE 'CREATE POLICY aditivos_read ON aditivos FOR SELECT TO authenticated USING (can_read())';
+    EXECUTE 'CREATE POLICY aditivos_write ON aditivos FOR ALL TO authenticated USING (can_write_all()) WITH CHECK (can_write_all())';
+  END IF;
+END $$;
+
+-- 5.10 ARQUIVOS — todos leem, corretor pode anexar/baixar (sobe pro próprio recurso)
+DROP POLICY IF EXISTS arquivos_own ON arquivos;
+CREATE POLICY arquivos_read ON arquivos FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY arquivos_write ON arquivos FOR ALL TO authenticated
+  USING (can_write_own()) WITH CHECK (can_write_own());
+
+-- 5.11 DOCUMENTOS_CONTRATO — só admin/gestor (gerenciam o acervo administrativo)
+DROP POLICY IF EXISTS documentos_contrato_own ON documentos_contrato;
+CREATE POLICY documentos_contrato_read ON documentos_contrato FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY documentos_contrato_write ON documentos_contrato FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.12 FORNECEDORES — admin/gestor
+DROP POLICY IF EXISTS fornecedores_own ON fornecedores;
+CREATE POLICY fornecedores_read ON fornecedores FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY fornecedores_write ON fornecedores FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.13 DESPESAS — admin/gestor
+DROP POLICY IF EXISTS despesas_own ON despesas;
+CREATE POLICY despesas_read ON despesas FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY despesas_write ON despesas FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.14 REAJUSTES — admin/gestor
+DROP POLICY IF EXISTS reajustes_own ON reajustes;
+CREATE POLICY reajustes_read ON reajustes FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY reajustes_write ON reajustes FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.15 DESCONTOS_SUSPENSOS — admin/gestor
+DROP POLICY IF EXISTS descontos_suspensos_own ON descontos_suspensos;
+CREATE POLICY descontos_suspensos_read ON descontos_suspensos FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY descontos_suspensos_write ON descontos_suspensos FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.16 COBRANCAS — admin/gestor
+DROP POLICY IF EXISTS cobrancas_own ON cobrancas;
+CREATE POLICY cobrancas_read ON cobrancas FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY cobrancas_write ON cobrancas FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.17 ALERTAS_ACOES — todos leem; admin/gestor gerenciam
+DROP POLICY IF EXISTS alertas_acoes_own ON alertas_acoes;
+CREATE POLICY alertas_acoes_read ON alertas_acoes FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY alertas_acoes_write ON alertas_acoes FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.18 CONFIG_ALERTAS — só admin/gestor
+DROP POLICY IF EXISTS config_alertas_own ON config_alertas;
+CREATE POLICY config_alertas_read ON config_alertas FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY config_alertas_write ON config_alertas FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.19 LOJAS (cadastro estável) — todos leem, só admin/gestor editam
+DROP POLICY IF EXISTS lojas_read_all ON lojas;
+DROP POLICY IF EXISTS lojas_write_admin ON lojas;
+CREATE POLICY lojas_read ON lojas FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY lojas_write ON lojas FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- 5.20 VAGAS
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vagas' AND table_schema = 'public') THEN
+    EXECUTE 'DROP POLICY IF EXISTS vagas_read_all ON vagas';
+    EXECUTE 'DROP POLICY IF EXISTS vagas_write_admin ON vagas';
+    EXECUTE 'CREATE POLICY vagas_read ON vagas FOR SELECT TO authenticated USING (can_read())';
+    EXECUTE 'CREATE POLICY vagas_write ON vagas FOR ALL TO authenticated USING (can_write_all()) WITH CHECK (can_write_all())';
+  END IF;
+END $$;
+
+-- 5.21 FERIADOS / INDICES_ECONOMICOS — leitura aberta, escrita só admin
+DROP POLICY IF EXISTS feriados_read_all ON feriados;
+DROP POLICY IF EXISTS feriados_write_admin ON feriados;
+CREATE POLICY feriados_read ON feriados FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY feriados_write ON feriados FOR ALL TO authenticated
+  USING (is_admin()) WITH CHECK (is_admin());
+
+DROP POLICY IF EXISTS indices_read_all ON indices_economicos;
+DROP POLICY IF EXISTS indices_write_admin ON indices_economicos;
+CREATE POLICY indices_read ON indices_economicos FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY indices_write ON indices_economicos FOR ALL TO authenticated
+  USING (is_admin()) WITH CHECK (is_admin());
+
+-- =====================================================================
+-- 6) Validação final
+-- =====================================================================
+DO $$
+DECLARE
+  total_perfis int;
+  total_admins int;
+BEGIN
+  SELECT count(*) INTO total_perfis FROM perfis;
+  SELECT count(*) INTO total_admins FROM perfis WHERE role = 'admin' AND ativo = true;
+  RAISE NOTICE '✓ % perfis criados, % admin(s) ativo(s)', total_perfis, total_admins;
+  IF total_admins = 0 THEN
+    RAISE WARNING '⚠ Nenhum admin ativo! Verifique fabricio@apexengenharia.com.br';
+  END IF;
+END $$;
+
+-- =====================================================================
+-- SMOKE TEST (rodar SEPARADAMENTE depois)
+-- =====================================================================
+-- SELECT user_role(), is_admin(), can_write_all(), can_write_own();
+-- SELECT * FROM perfis;
+-- SELECT count(*) FROM contratos;
+(admin, true, true, true)
+-- SELECT * FROM perfis;                                              -- lista todos os perfis
+-- SELECT count(*) FROM contratos;                                    -- deve voltar contagem normal
+
+
+-- ===== ARQUIVO: SQL_GESTOES_CONTRATO.sql =====
+-- =====================================================================
+-- UNION 511 — Tabela GESTOES_CONTRATO (piloto IA)
+-- =====================================================================
+-- Catálogo de itens "gestionáveis" extraídos de contratos.
+-- Cada linha = uma regra/evento que merece acompanhamento.
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS gestoes_contrato (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contrato_id uuid NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+
+  -- O que é
+  titulo text NOT NULL,
+  tipo text NOT NULL,              -- carencia_fim, reajuste_aniversario, marco_5anos, termino,
+                                   -- aviso_devolucao, garantia_pendencia, validacao_fianca,
+                                   -- comprovantes, vistoria, seguro, destinacao
+  descricao text,
+  clausula_origem text,
+
+  -- Quando
+  data_evento date,                -- pode ser NULL (gestão sem data fixa, ex: regra informativa)
+  recorrencia text DEFAULT 'one_off',   -- one_off, anual, semestral, mensal, manual_recorrente, informativo
+  recorrencia_ate date,            -- limita a recorrência (ex: até término do contrato)
+
+  -- Como avisar
+  dias_aviso int[],                -- ex: {180,90,60,30} dias antes
+  parametros jsonb,                -- detalhes específicos (índice, fallback, etc.)
+
+  -- Estado
+  ativo boolean NOT NULL DEFAULT true,
+  status text DEFAULT 'pendente',  -- pendente, executado, cancelado, atrasado
+  ultima_acao_em timestamptz,
+
+  -- Metadata
+  gerado_por text DEFAULT 'manual',   -- 'ia' ou 'manual'
+  created_by uuid REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gestoes_contrato ON gestoes_contrato(contrato_id);
+CREATE INDEX IF NOT EXISTS idx_gestoes_data ON gestoes_contrato(data_evento) WHERE ativo;
+CREATE INDEX IF NOT EXISTS idx_gestoes_tipo ON gestoes_contrato(tipo);
+
+-- RLS — mesma lógica das outras tabelas operacionais
+ALTER TABLE gestoes_contrato ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gestoes_read  ON gestoes_contrato;
+DROP POLICY IF EXISTS gestoes_write ON gestoes_contrato;
+CREATE POLICY gestoes_read  ON gestoes_contrato FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY gestoes_write ON gestoes_contrato FOR ALL    TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- Trigger pra auto-preencher created_by (igual ao padrão das outras tabelas)
+DROP TRIGGER IF EXISTS trg_set_created_by ON gestoes_contrato;
+CREATE TRIGGER trg_set_created_by BEFORE INSERT ON gestoes_contrato
+  FOR EACH ROW EXECUTE FUNCTION set_created_by();
+
+-- Trigger pra updated_at automático
+CREATE OR REPLACE FUNCTION gestoes_set_updated_at() RETURNS trigger
+LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at := now(); RETURN NEW; END; $$;
+DROP TRIGGER IF EXISTS trg_gestoes_updated_at ON gestoes_contrato;
+CREATE TRIGGER trg_gestoes_updated_at BEFORE UPDATE ON gestoes_contrato
+  FOR EACH ROW EXECUTE FUNCTION gestoes_set_updated_at();
+
+-- =====================================================================
+
+-- [seed Calistenia removido no projeto novo]
+
+
+-- ===== ARQUIVO: SQL_CONTRATOS_HISTORICO.sql =====
+-- =====================================================================
+-- UNION 511 — Histórico de alterações dos contratos (audit log)
+-- =====================================================================
+-- Cada UPDATE em contratos gera uma linha em contratos_historico
+-- registrando: o que mudou, quem fez, quando.
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS contratos_historico (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contrato_id uuid NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  acao text NOT NULL,                  -- 'INSERT', 'UPDATE', 'DELETE', 'ENCERRADO'
+  campos_alterados jsonb,              -- { campo: { antes, depois } }
+  alterado_por uuid REFERENCES auth.users(id),
+  alterado_em timestamptz NOT NULL DEFAULT now(),
+  observacao text                      -- nota opcional ("Aditivo de prazo", "Renegociação", etc)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hist_contrato ON contratos_historico(contrato_id);
+CREATE INDEX IF NOT EXISTS idx_hist_data     ON contratos_historico(alterado_em DESC);
+
+-- RLS (mesma lógica das outras)
+ALTER TABLE contratos_historico ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS hist_read  ON contratos_historico;
+DROP POLICY IF EXISTS hist_write ON contratos_historico;
+CREATE POLICY hist_read  ON contratos_historico FOR SELECT TO authenticated USING (can_read());
+-- Só o trigger insere; ninguém UPDATE manualmente
+CREATE POLICY hist_write ON contratos_historico FOR INSERT TO authenticated WITH CHECK (true);
+
+-- =====================================================================
+-- Função que detecta mudanças e registra
+-- =====================================================================
+CREATE OR REPLACE FUNCTION fn_log_contrato_change() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_changes jsonb := '{}'::jsonb;
+  v_user uuid := auth.uid();
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO contratos_historico (contrato_id, acao, alterado_por)
+    VALUES (NEW.id, 'INSERT', v_user);
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    INSERT INTO contratos_historico (contrato_id, acao, alterado_por)
+    VALUES (OLD.id, 'DELETE', v_user);
+    RETURN OLD;
+  END IF;
+
+  -- UPDATE: compara campo a campo (só os importantes)
+  IF OLD.valor_aluguel       IS DISTINCT FROM NEW.valor_aluguel       THEN
+    v_changes := v_changes || jsonb_build_object('valor_aluguel', jsonb_build_object('antes', OLD.valor_aluguel, 'depois', NEW.valor_aluguel));
+  END IF;
+  IF OLD.dia_vencimento      IS DISTINCT FROM NEW.dia_vencimento      THEN
+    v_changes := v_changes || jsonb_build_object('dia_vencimento', jsonb_build_object('antes', OLD.dia_vencimento, 'depois', NEW.dia_vencimento));
+  END IF;
+  IF OLD.meses_carencia      IS DISTINCT FROM NEW.meses_carencia      THEN
+    v_changes := v_changes || jsonb_build_object('meses_carencia', jsonb_build_object('antes', OLD.meses_carencia, 'depois', NEW.meses_carencia));
+  END IF;
+  IF OLD.prazo_meses         IS DISTINCT FROM NEW.prazo_meses         THEN
+    v_changes := v_changes || jsonb_build_object('prazo_meses', jsonb_build_object('antes', OLD.prazo_meses, 'depois', NEW.prazo_meses));
+  END IF;
+  IF OLD.data_inicio         IS DISTINCT FROM NEW.data_inicio         THEN
+    v_changes := v_changes || jsonb_build_object('data_inicio', jsonb_build_object('antes', OLD.data_inicio, 'depois', NEW.data_inicio));
+  END IF;
+  IF OLD.data_termino        IS DISTINCT FROM NEW.data_termino        THEN
+    v_changes := v_changes || jsonb_build_object('data_termino', jsonb_build_object('antes', OLD.data_termino, 'depois', NEW.data_termino));
+  END IF;
+  IF OLD.indice_reajuste     IS DISTINCT FROM NEW.indice_reajuste     THEN
+    v_changes := v_changes || jsonb_build_object('indice_reajuste', jsonb_build_object('antes', OLD.indice_reajuste, 'depois', NEW.indice_reajuste));
+  END IF;
+  IF OLD.tipo_garantia       IS DISTINCT FROM NEW.tipo_garantia       THEN
+    v_changes := v_changes || jsonb_build_object('tipo_garantia', jsonb_build_object('antes', OLD.tipo_garantia, 'depois', NEW.tipo_garantia));
+  END IF;
+  IF OLD.detalhes_garantia   IS DISTINCT FROM NEW.detalhes_garantia   THEN
+    v_changes := v_changes || jsonb_build_object('detalhes_garantia', jsonb_build_object('antes', OLD.detalhes_garantia, 'depois', NEW.detalhes_garantia));
+  END IF;
+  IF OLD.status              IS DISTINCT FROM NEW.status              THEN
+    v_changes := v_changes || jsonb_build_object('status', jsonb_build_object('antes', OLD.status, 'depois', NEW.status));
+  END IF;
+  IF OLD.observacoes         IS DISTINCT FROM NEW.observacoes         THEN
+    v_changes := v_changes || jsonb_build_object('observacoes', jsonb_build_object('antes', LEFT(COALESCE(OLD.observacoes,''),200), 'depois', LEFT(COALESCE(NEW.observacoes,''),200)));
+  END IF;
+
+  -- Só insere se alguma coisa mudou de fato
+  IF v_changes != '{}'::jsonb THEN
+    INSERT INTO contratos_historico (contrato_id, acao, campos_alterados, alterado_por)
+    VALUES (NEW.id, CASE WHEN NEW.status = 'encerrado' AND OLD.status != 'encerrado' THEN 'ENCERRADO' ELSE 'UPDATE' END,
+            v_changes, v_user);
+  END IF;
+
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_log_contrato ON contratos;
+CREATE TRIGGER trg_log_contrato
+  AFTER INSERT OR UPDATE OR DELETE ON contratos
+  FOR EACH ROW EXECUTE FUNCTION fn_log_contrato_change();
+
+-- =====================================================================
+-- Backfill: cria entrada "INSERT" pra cada contrato existente
+-- (assim a timeline mostra "criado em XX/XX")
+-- =====================================================================
+INSERT INTO contratos_historico (contrato_id, acao, alterado_em)
+SELECT c.id, 'INSERT', COALESCE(c.created_at, now())
+  FROM contratos c
+ WHERE NOT EXISTS (
+   SELECT 1 FROM contratos_historico h
+    WHERE h.contrato_id = c.id AND h.acao = 'INSERT'
+ );
+
+-- Conferência:
+-- SELECT COUNT(*) FROM contratos_historico;
+
+
+-- ===== ARQUIVO: SQL_GESTAO_OCORRENCIAS.sql =====
+-- =====================================================================
+-- UNION 511 — Sistema de ciclos: gestao_ocorrencias
+-- =====================================================================
+-- Cada GESTÃO (template/regra) agora gera múltiplas OCORRÊNCIAS.
+-- Cada ocorrência tem um estado (pendente/cumprida) e pode ter um
+-- arquivo opcional anexado. Quando cumprida, o trigger cria a próxima
+-- (apenas para ciclos recorrentes).
+-- =====================================================================
+
+-- 1) Adiciona categoria nas gestões (define como comportar)
+ALTER TABLE gestoes_contrato
+  ADD COLUMN IF NOT EXISTS categoria text DEFAULT 'evento_unico';
+-- valores: 'evento_unico' | 'ciclo_recorrente' | 'informativo' | 'pendencia_pontual'
+
+ALTER TABLE gestoes_contrato
+  ADD COLUMN IF NOT EXISTS periodicidade_meses int;
+-- só preenche se categoria='ciclo_recorrente'. Ex: 6 (semestral), 12 (anual)
+
+-- Migra dados existentes: categoriza com base no tipo
+UPDATE gestoes_contrato SET
+  categoria = CASE
+    WHEN tipo IN ('carencia_fim','marco_5anos','aviso_devolucao','termino') THEN 'evento_unico'
+    WHEN tipo = 'destinacao' THEN 'informativo'
+    WHEN tipo = 'garantia_pendencia' THEN 'pendencia_pontual'
+    WHEN tipo IN ('reajuste_aniversario','validacao_fianca','vistoria','seguro') THEN 'ciclo_recorrente'
+    WHEN tipo = 'comprovantes' THEN 'ciclo_recorrente'
+    ELSE 'evento_unico'
+  END,
+  periodicidade_meses = CASE
+    WHEN tipo = 'comprovantes' THEN 6
+    WHEN tipo IN ('reajuste_aniversario','validacao_fianca','vistoria','seguro') THEN 12
+    ELSE NULL
+  END
+WHERE categoria IS NULL OR categoria = 'evento_unico';
+
+-- 2) Tabela de ocorrências (instâncias de cada gestão)
+CREATE TABLE IF NOT EXISTS gestao_ocorrencias (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  gestao_id   uuid NOT NULL REFERENCES gestoes_contrato(id) ON DELETE CASCADE,
+  contrato_id uuid NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+
+  data_prevista date NOT NULL,
+  data_cumprida date,
+  status text NOT NULL DEFAULT 'pendente',  -- 'pendente' | 'cumprido' | 'cancelado'
+
+  -- Anexo OPCIONAL: PDF que comprova o cumprimento
+  -- O arquivo é salvo na tabela arquivos (entidade_tipo='contrato')
+  -- e aparece automaticamente na aba "Anexos" da ficha.
+  arquivo_id uuid REFERENCES arquivos(id) ON DELETE SET NULL,
+
+  observacao text,
+  cumprido_por uuid REFERENCES auth.users(id),
+  created_by  uuid REFERENCES auth.users(id),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  cumprido_em timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS idx_ocor_gestao    ON gestao_ocorrencias(gestao_id);
+CREATE INDEX IF NOT EXISTS idx_ocor_contrato  ON gestao_ocorrencias(contrato_id);
+CREATE INDEX IF NOT EXISTS idx_ocor_pendentes ON gestao_ocorrencias(data_prevista) WHERE status='pendente';
+
+-- 3) RLS (mesmo padrão das outras)
+ALTER TABLE gestao_ocorrencias ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ocor_read  ON gestao_ocorrencias;
+DROP POLICY IF EXISTS ocor_write ON gestao_ocorrencias;
+CREATE POLICY ocor_read  ON gestao_ocorrencias FOR SELECT TO authenticated USING (can_read());
+CREATE POLICY ocor_write ON gestao_ocorrencias FOR ALL    TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+DROP TRIGGER IF EXISTS trg_set_created_by_ocor ON gestao_ocorrencias;
+CREATE TRIGGER trg_set_created_by_ocor BEFORE INSERT ON gestao_ocorrencias
+  FOR EACH ROW EXECUTE FUNCTION set_created_by();
+
+-- 4) FUNÇÃO TRIGGER: ao marcar cumprido, cria próxima ocorrência (se ciclo recorrente)
+CREATE OR REPLACE FUNCTION fn_criar_proxima_ocorrencia() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_categoria text;
+  v_periodicidade int;
+  v_recorrencia_ate date;
+BEGIN
+  -- Só age quando mudou pra 'cumprido'
+  IF NEW.status != 'cumprido' OR OLD.status = 'cumprido' THEN
+    RETURN NEW;
+  END IF;
+
+  -- Marca quem cumpriu e quando
+  NEW.cumprido_por := auth.uid();
+  NEW.cumprido_em  := now();
+  IF NEW.data_cumprida IS NULL THEN
+    NEW.data_cumprida := CURRENT_DATE;
+  END IF;
+
+  -- Busca categoria + periodicidade da gestão pai
+  SELECT g.categoria, g.periodicidade_meses, g.recorrencia_ate
+    INTO v_categoria, v_periodicidade, v_recorrencia_ate
+    FROM gestoes_contrato g WHERE g.id = NEW.gestao_id;
+
+  -- Só cria próxima se for ciclo_recorrente E não passou do recorrencia_ate
+  IF v_categoria = 'ciclo_recorrente' AND v_periodicidade IS NOT NULL THEN
+    DECLARE
+      v_proxima_data date := NEW.data_prevista + (v_periodicidade || ' months')::interval;
+    BEGIN
+      IF v_recorrencia_ate IS NULL OR v_proxima_data <= v_recorrencia_ate THEN
+        -- Cria próxima ocorrência (só se ainda não existir uma pendente futura)
+        IF NOT EXISTS (
+          SELECT 1 FROM gestao_ocorrencias o
+          WHERE o.gestao_id = NEW.gestao_id
+            AND o.status = 'pendente'
+            AND o.data_prevista > NEW.data_prevista
+        ) THEN
+          INSERT INTO gestao_ocorrencias (gestao_id, contrato_id, data_prevista, status)
+          VALUES (NEW.gestao_id, NEW.contrato_id, v_proxima_data, 'pendente');
+        END IF;
+      END IF;
+    END;
+  END IF;
+
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_proxima_ocor ON gestao_ocorrencias;
+CREATE TRIGGER trg_proxima_ocor
+  BEFORE UPDATE OF status ON gestao_ocorrencias
+  FOR EACH ROW EXECUTE FUNCTION fn_criar_proxima_ocorrencia();
+
+-- 5) BACKFILL: cria 1 ocorrência pendente pra cada gestão existente que tem data_evento
+INSERT INTO gestao_ocorrencias (gestao_id, contrato_id, data_prevista, status)
+SELECT g.id, g.contrato_id, g.data_evento, 'pendente'
+  FROM gestoes_contrato g
+ WHERE g.ativo = true
+   AND g.data_evento IS NOT NULL
+   AND g.categoria != 'informativo'
+   AND NOT EXISTS (
+     SELECT 1 FROM gestao_ocorrencias o WHERE o.gestao_id = g.id
+   );
+
+-- =====================================================================
+-- Conferência rápida (rodar depois):
+-- =====================================================================
+-- SELECT g.titulo, g.categoria, g.periodicidade_meses,
+--        COUNT(o.id) AS qtd_ocorrencias,
+--        MIN(o.data_prevista) FILTER (WHERE o.status='pendente') AS proxima_pendente
+-- FROM gestoes_contrato g
+-- LEFT JOIN gestao_ocorrencias o ON o.gestao_id = g.id
+-- WHERE g.ativo = true
+-- GROUP BY g.id, g.titulo, g.categoria, g.periodicidade_meses
+-- ORDER BY g.categoria, g.titulo;
+
+
+-- ===== ARQUIVO: SQL_ANEXOS_UNIFICADOS.sql =====
+-- =====================================================================
+-- Unificação de Anexos do Contrato
+-- =====================================================================
+-- Antes: havia duas tabelas separadas pra anexos de contrato:
+--   - `arquivos` (PDF do contrato, aditivos — sem data de validade)
+--   - `documentos_contrato` (seguros, certidões, AVCB — com data de validade + alerta)
+--
+-- Depois: tudo vai pra `documentos_contrato`. A tabela `arquivos` continua existindo
+-- (ainda é usada por propostas), mas anexos de contrato saem de lá.
+--
+-- IMPORTANTE: idempotente — pode rodar quantas vezes for, não duplica.
+-- =====================================================================
+
+-- 1) Amplia documentos_contrato pra acomodar metadados de arquivo (nome, tamanho)
+ALTER TABLE documentos_contrato
+  ADD COLUMN IF NOT EXISTS nome_original text NULL,
+  ADD COLUMN IF NOT EXISTS tamanho_bytes bigint NULL;
+
+-- Permite data_validade nula (anexos como contrato/aditivo não têm prazo)
+ALTER TABLE documentos_contrato
+  ALTER COLUMN data_validade DROP NOT NULL;
+
+-- Amplia o CHECK constraint da coluna `tipo` pra aceitar também os novos tipos
+-- (contrato, aditivo) que entram com a unificação dos anexos.
+DO $$
+DECLARE
+  cname text;
+BEGIN
+  FOR cname IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'documentos_contrato'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%tipo%'
+  LOOP
+    EXECUTE format('ALTER TABLE documentos_contrato DROP CONSTRAINT %I', cname);
+  END LOOP;
+END $$;
+
+ALTER TABLE documentos_contrato
+  DROP CONSTRAINT IF EXISTS documentos_contrato_tipo_check;
+ALTER TABLE documentos_contrato
+  ADD CONSTRAINT documentos_contrato_tipo_check
+  CHECK (tipo IN (
+    'contrato', 'aditivo',
+    'seguro_fianca', 'seguro_incendio',
+    'certidao_negativa_federal', 'certidao_negativa_municipal',
+    'certidao_negativa_estadual', 'certidao_trabalhista',
+    'vistoria_inicial', 'vistoria_final',
+    'laudo_avcb', 'alvara_funcionamento',
+    'outros'
+  ));
+
+COMMENT ON COLUMN documentos_contrato.nome_original IS
+  'Nome original do PDF anexado (preservado do upload).';
+COMMENT ON COLUMN documentos_contrato.tamanho_bytes IS
+  'Tamanho do PDF em bytes (referência visual na UI).';
+COMMENT ON COLUMN documentos_contrato.data_validade IS
+  'Data de validade (opcional). Quando preenchida, gera alertas automáticos.';
+
+-- 2) Migra arquivos de contrato → documentos_contrato
+-- Pra cada arquivo de contrato que ainda NÃO está em documentos_contrato (chave: arquivo_url = storage_path)
+INSERT INTO documentos_contrato (
+  contrato_id,
+  tipo,
+  data_validade,
+  descricao,
+  arquivo_url,
+  nome_original,
+  tamanho_bytes
+)
+SELECT
+  a.entidade_id,
+  CASE
+    WHEN a.categoria IN ('contrato_assinado', 'contrato')                      THEN 'contrato'
+    WHEN a.categoria = 'aditivo'                                               THEN 'aditivo'
+    WHEN a.categoria IN ('fianca', 'seguro_fianca')                            THEN 'seguro_fianca'
+    WHEN a.categoria IN ('seguro_incendio', 'apolice_seguro')                  THEN 'seguro_incendio'
+    WHEN a.categoria IN ('avcb', 'laudo_avcb', 'laudo')                        THEN 'laudo_avcb'
+    WHEN a.categoria IN ('alvara', 'alvara_funcionamento')                     THEN 'alvara_funcionamento'
+    WHEN a.categoria IN ('certidao', 'certidao_negativa_federal')              THEN 'certidao_negativa_federal'
+    WHEN a.categoria = 'vistoria_inicial'                                      THEN 'vistoria_inicial'
+    WHEN a.categoria = 'vistoria_final'                                        THEN 'vistoria_final'
+    ELSE 'outros'
+  END                                         AS tipo,
+  NULL::date                                  AS data_validade,
+  a.nome_original                             AS descricao,
+  a.storage_path,
+  a.nome_original,
+  a.tamanho_bytes
+FROM arquivos a
+WHERE a.entidade_tipo = 'contrato'
+  -- Só migra arquivos cujo contrato AINDA EXISTE (ignora órfãos de contratos deletados)
+  AND EXISTS (
+    SELECT 1 FROM contratos c WHERE c.id = a.entidade_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM documentos_contrato d
+    WHERE d.arquivo_url = a.storage_path
+  );
+
+-- 3) Confere quantos migraram e o estado final
+SELECT
+  'arquivos de contrato (origem)' AS fonte,
+  COUNT(*) AS qtde
+FROM arquivos
+WHERE entidade_tipo = 'contrato'
+UNION ALL
+SELECT
+  'documentos_contrato (destino unificado)',
+  COUNT(*)
+FROM documentos_contrato
+UNION ALL
+SELECT
+  'documentos_contrato COM data de validade (com alerta)',
+  COUNT(*)
+FROM documentos_contrato
+WHERE data_validade IS NOT NULL
+UNION ALL
+SELECT
+  'documentos_contrato SEM data de validade (anexos puros)',
+  COUNT(*)
+FROM documentos_contrato
+WHERE data_validade IS NULL;
+
+-- 4) Lista por contrato pra revisão visual
+SELECT
+  d.contrato_id,
+  d.tipo,
+  d.numero,
+  d.descricao,
+  d.nome_original,
+  d.data_validade,
+  CASE WHEN d.data_validade IS NULL THEN 'anexo' ELSE 'com prazo' END AS classificacao
+FROM documentos_contrato d
+ORDER BY d.contrato_id;
+
+
+-- ===== ARQUIVO: SQL_SIENGE_PARCELAS.sql =====
+-- =====================================================================
+-- Espelho das parcelas do SIENGE (fonte oficial das cobranças)
+-- =====================================================================
+-- Cada contrato (especialmente Evolve+) tem múltiplos "títulos" no SIENGE:
+--   - CT.UNIxxxxx (aluguel principal — 121 parcelas mensais até 2035)
+--   - COND.UNIxxxxx (condomínio — 12 parcelas anuais)
+--   - IPTU.UNIxxxxx (IPTU — cota única ou parcelado)
+--   - REC.xxxx (recibos avulsos/ajustes)
+--
+-- Esta tabela armazena espelhadamente cada PARCELA de cada título.
+-- Importação acontece via PDF "Saldo Devedor Presente" do SIENGE,
+-- lido pela IA Claude (modo extract_sienge).
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS sienge_parcelas (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contrato_id         uuid NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+
+  -- Identificação do título no SIENGE
+  sienge_titulo       text NOT NULL,            -- ex: "12410 / CT.UNI01925"
+  sienge_titulo_id    text,                     -- ex: "12410" (parte numérica)
+  sienge_codigo       text,                     -- ex: "CT.UNI01925"
+  componente          text NOT NULL DEFAULT 'aluguel'
+                      CHECK (componente IN ('aluguel','condominio','iptu','recibo','outros')),
+
+  -- Identificação da parcela
+  parcela_num         integer,                  -- ex: 6  (de 12 ou 121)
+  parcela_total       integer,                  -- ex: 121
+  parcela_rotulo      text,                     -- ex: "6/121" ou "1/1*"
+
+  -- Valores e datas
+  data_vencimento     date NOT NULL,
+  valor_original      numeric(14,2) NOT NULL,
+  valor_corrigido     numeric(14,2),
+  indexador           text,                     -- ex: 'REAL', 'IGP-M', 'IPCA'
+
+  -- Pagamento (NULL se ainda a vencer)
+  data_pagamento      date,
+  valor_pago          numeric(14,2),
+  recto_liquido       numeric(14,2),
+
+  -- Status calculado
+  status              text NOT NULL DEFAULT 'a_vencer'
+                      CHECK (status IN ('paga','a_vencer','atrasada')),
+
+  -- Rastreabilidade da importação
+  importado_em        timestamptz NOT NULL DEFAULT now(),
+  importado_por       uuid REFERENCES auth.users(id),
+  origem_pdf_path     text,                     -- storage_path do PDF importado
+
+  -- Texto livre (observações vindas do SIENGE)
+  observacoes         text,
+
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- Chave de idempotência: pra mesmo contrato + título + parcela, atualiza (não duplica)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sienge_parcelas_chave
+  ON sienge_parcelas (contrato_id, sienge_codigo, parcela_num, data_vencimento);
+
+-- Índices auxiliares pra performance
+CREATE INDEX IF NOT EXISTS idx_sienge_parcelas_contrato      ON sienge_parcelas (contrato_id);
+CREATE INDEX IF NOT EXISTS idx_sienge_parcelas_vencimento    ON sienge_parcelas (data_vencimento);
+CREATE INDEX IF NOT EXISTS idx_sienge_parcelas_status        ON sienge_parcelas (status);
+
+-- RLS — só admins/gestores podem ler/escrever
+ALTER TABLE sienge_parcelas ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS sienge_parcelas_admin_all ON sienge_parcelas;
+CREATE POLICY sienge_parcelas_admin_all ON sienge_parcelas
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM perfis p
+      WHERE p.user_id = auth.uid()
+        AND p.role IN ('admin','gestor')
+        AND p.ativo = true
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM perfis p
+      WHERE p.user_id = auth.uid()
+        AND p.role IN ('admin','gestor')
+        AND p.ativo = true
+    )
+  );
+
+-- =====================================================================
+-- View: saldo agregado por contrato (com flag "tem SIENGE?")
+-- =====================================================================
+CREATE OR REPLACE VIEW v_saldo_sienge_por_contrato AS
+SELECT
+  c.id                                                AS contrato_id,
+  (SELECT count(*) > 0 FROM sienge_parcelas WHERE contrato_id = c.id) AS tem_sienge,
+  (SELECT max(importado_em) FROM sienge_parcelas WHERE contrato_id = c.id) AS ultima_importacao,
+  -- Totais a vencer
+  COALESCE((SELECT sum(valor_corrigido) FROM sienge_parcelas
+            WHERE contrato_id = c.id AND status IN ('a_vencer','atrasada')), 0) AS total_a_vencer,
+  -- Totais já pagos
+  COALESCE((SELECT sum(valor_pago) FROM sienge_parcelas
+            WHERE contrato_id = c.id AND status = 'paga'), 0) AS total_pago,
+  -- Atrasadas
+  COALESCE((SELECT count(*) FROM sienge_parcelas
+            WHERE contrato_id = c.id AND status = 'atrasada'), 0) AS qtd_atrasadas,
+  -- Próxima parcela a vencer
+  (SELECT json_build_object('data', data_vencimento, 'valor', valor_corrigido, 'componente', componente)
+   FROM sienge_parcelas
+   WHERE contrato_id = c.id AND status IN ('a_vencer','atrasada')
+   ORDER BY data_vencimento ASC LIMIT 1) AS proxima_parcela,
+  -- Soma dos COMPONENTES vigentes pro mês atual (consolidado p/ Evolve+)
+  COALESCE((SELECT sum(valor_corrigido) FROM sienge_parcelas
+            WHERE contrato_id = c.id
+              AND date_trunc('month', data_vencimento) = date_trunc('month', current_date)), 0) AS valor_mes_atual
+FROM contratos c
+WHERE c.status = 'ativo';
+
+-- =====================================================================
+-- Trigger: atualiza status conforme data atual (a_vencer → atrasada)
+-- =====================================================================
+CREATE OR REPLACE FUNCTION fn_recalcular_status_sienge()
+RETURNS void AS $$
+BEGIN
+  UPDATE sienge_parcelas
+  SET status = 'atrasada', updated_at = now()
+  WHERE status = 'a_vencer'
+    AND data_pagamento IS NULL
+    AND data_vencimento < current_date;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION fn_recalcular_status_sienge IS
+  'Recalcula status das parcelas: a_vencer → atrasada quando vencimento passou. Rodar antes de queries de saldo.';
+
+-- Roda já agora pra atualizar tudo
+SELECT fn_recalcular_status_sienge();
+
+-- =====================================================================
+-- Verificação
+-- =====================================================================
+SELECT
+  c.id,
+  i.nome_fantasia,
+  v.tem_sienge,
+  v.ultima_importacao,
+  v.total_a_vencer,
+  v.total_pago,
+  v.qtd_atrasadas,
+  v.valor_mes_atual
+FROM contratos c
+JOIN inquilinos i ON i.id = c.inquilino_id
+LEFT JOIN v_saldo_sienge_por_contrato v ON v.contrato_id = c.id
+WHERE c.status = 'ativo'
+ORDER BY i.nome_fantasia;
+
+
+-- ===== ARQUIVO: PARA_GITHUB/SQL_APP_CONFIG.sql =====
+-- =====================================================================
+-- Tabela app_config — configurações do app em chave/valor (JSONB)
+-- Primeiro uso: coordenadas da planta baixa (chave 'planta_coords')
+-- Assim os ajustes de posição/tamanho das lojas ficam no banco e não
+-- se perdem ao limpar cache, trocar de navegador ou dispositivo.
+--
+-- Rode UMA VEZ no Supabase SQL Editor.
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS app_config (
+  chave       text PRIMARY KEY,
+  valor       jsonb NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS app_config_read  ON app_config;
+DROP POLICY IF EXISTS app_config_write ON app_config;
+
+-- Todo usuário autenticado pode LER (o mapa é igual pra todos)
+CREATE POLICY app_config_read ON app_config
+  FOR SELECT TO authenticated USING (true);
+
+-- Só quem tem permissão de escrita geral pode ALTERAR
+CREATE POLICY app_config_write ON app_config
+  FOR ALL TO authenticated
+  USING (can_write_all()) WITH CHECK (can_write_all());
+
+-- Conferência
+SELECT table_name FROM information_schema.tables WHERE table_name = 'app_config';
